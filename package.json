@@ -1,0 +1,15 @@
+{
+  "name": "zhuangxiu-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "装修管理平台：装修公司(B端) + 业主/自装人(C端)，PC + 手机双端，数据互通",
+  "scripts": {
+    "dev:server": "pnpm --filter @zhuangxiu/server start:dev",
+    "dev:admin": "pnpm --filter @zhuangxiu/admin-web dev",
+    "dev:app": "pnpm --filter @zhuangxiu/app dev:mp-weixin",
+    "build": "pnpm -r build"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

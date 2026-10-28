@@ -1,0 +1,4 @@
+packages:
+  - "server"
+  - "admin-web"
+  - "app-uniapp"

@@ -3,7 +3,7 @@ import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments
 import { confirmAcceptAction, decideChangeAction, sendOwnerMessageAction } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
-import { Progress, StatusBadge, daysBetween, fmtMoney, fmtTime } from "@/components/ui";
+import { Progress, StatusBadge, DueBadge, daysBetween, fmtDate, fmtMoney, fmtTime } from "@/components/ui";
 
 export default async function ClientPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -39,13 +39,13 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
 
   return (
     <div className="mx-auto max-w-md px-4 pb-28 pt-6">
-      <div className="mb-4">
-        <div className="text-xs font-medium text-amber-600">{site.community}</div>
+      <div className="mb-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-4 py-4 text-white shadow-sm">
+        <div className="text-[11px] font-medium text-indigo-100">{site.community}</div>
         <h1 className="mt-0.5 text-xl font-bold">{site.name}</h1>
-        <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-zinc-500">
-          <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">{site.layout}</span>
-          <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">工长 {site.foreman}</span>
-          <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">演示装饰</span>
+        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+          <span className="rounded-full bg-white/15 px-2.5 py-1 ring-1 ring-inset ring-white/25">{site.layout}</span>
+          <span className="rounded-full bg-white/15 px-2.5 py-1 ring-1 ring-inset ring-white/25">工长 {site.foreman}</span>
+          <span className="rounded-full bg-white/15 px-2.5 py-1 ring-1 ring-inset ring-white/25">演示装饰</span>
         </div>
       </div>
 
@@ -78,15 +78,33 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
             )}
           </div>
         </div>
-        <div className="mt-3">
-          <Progress value={pct} tone="amber" />
-        </div>
-        <div className="mt-3 flex justify-between text-[11px] text-zinc-400">
-          {steps.map((s) => (
-            <span key={s.id} className={s.status === "已完成" ? "font-semibold text-emerald-600" : s.status === "进行中" ? "font-semibold text-amber-600" : ""}>
-              {s.name.replace("改造", "").replace("铺贴", "").replace("制作", "").replace("涂装", "").replace("收尾", "").replace("验收", "竣")}
-            </span>
-          ))}
+        {/* 工序 stepper：圆点+连线，当前工序脉冲 */}
+        <div className="relative mt-4 h-11">
+          <div className="absolute left-[calc(100%/12)] right-[calc(100%/12)] top-[9px] h-[3px] rounded-full bg-zinc-100" />
+          <div
+            className="absolute left-[calc(100%/12)] top-[9px] h-[3px] rounded-full bg-emerald-400"
+            style={{ width: `calc((100% - 16.6667%) * ${steps.length > 1 ? stepDone / (steps.length - 1) : 0})` }}
+          />
+          <div className="relative flex h-full">
+            {steps.map((s, i) => {
+              const done = s.status === "已完成";
+              const active = s.status === "进行中";
+              return (
+                <div key={s.id} className="flex flex-1 flex-col items-center">
+                  <span className={`flex h-[21px] w-[21px] items-center justify-center rounded-full text-[10px] font-bold ring-2 transition-all ${
+                    done ? "bg-emerald-400 text-white ring-emerald-100"
+                    : active ? "bg-amber-400 text-white ring-amber-100"
+                    : "bg-white text-zinc-300 ring-zinc-100"
+                  } ${active ? "animate-pulse" : ""}`}>
+                    {done ? "✓" : i + 1}
+                  </span>
+                  <span className={`mt-1 text-[9px] leading-none ${active ? "font-semibold text-amber-600" : done ? "text-emerald-600" : "text-zinc-400"}`}>
+                    {s.name.replace("改造", "").replace("铺贴", "").replace("制作", "").replace("涂装", "").replace("收尾", "").replace("验收", "竣")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -99,20 +117,27 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
         <div className="mt-2">
           <Progress value={site.budget > 0 ? (receivedSum / site.budget) * 100 : 0} tone="emerald" />
         </div>
-        <div className="mt-3 space-y-1.5">
-          {payments.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-xs">
-              <span className="text-zinc-600">{p.title}</span>
-              <span className="flex items-center gap-2">
-                <span className="font-mono font-semibold text-zinc-700">¥{fmtMoney(p.amount)}</span>
-                {p.status === "已收款" ? (
-                  <span className="text-[11px] text-emerald-600">{fmtTime(p.paid_at)} 已收</span>
-                ) : (
-                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-600 ring-1 ring-amber-200">待收款</span>
-                )}
-              </span>
-            </div>
-          ))}
+        <div className="mt-2.5 divide-y divide-zinc-50">
+          {payments.map((p) => {
+            const isOverdue = p.status === "待收款" && p.due_date && new Date(p.due_date).getTime() < Date.now();
+            return (
+              <div key={p.id} className="flex items-center gap-3 py-2">
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs ${
+                  p.status === "已收款" ? "bg-emerald-100 text-emerald-600" : isOverdue ? "bg-red-100 text-red-500" : "bg-amber-100 text-amber-600"
+                }`}>
+                  {p.status === "已收款" ? "✓" : isOverdue ? "!" : "⏰"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium text-zinc-700">{p.title}</div>
+                  <div className="text-[10px] text-zinc-400">
+                    {p.status === "已收款" ? `${fmtTime(p.paid_at)} 已收款` : p.due_date ? `应于 ${fmtDate(p.due_date)} 前缴纳` : "待收款"}
+                  </div>
+                </div>
+                <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-zinc-700">¥{fmtMoney(p.amount)}</span>
+                <DueBadge due={p.due_date} status={p.status} />
+              </div>
+            );
+          })}
         </div>
         {confirmedExtra > 0 && (
           <p className="mt-2.5 border-t border-zinc-100 pt-2 text-[11px] leading-relaxed text-zinc-400">
@@ -216,7 +241,13 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
         <div className="space-y-4">
           {groups.map((g) => (
             <div key={g.name}>
-              <div className="mb-1.5 text-[11px] font-semibold text-zinc-400">· {g.name}</div>
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-zinc-500">{g.name}</span>
+                <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 font-mono text-[9px] text-zinc-400">
+                  {g.items.filter((i) => i.done).length}/{g.items.length}
+                </span>
+                <span className="h-px flex-1 bg-zinc-100" />
+              </div>
               <div className="space-y-2">
                 {g.items.map((it) =>
                   it.done ? (
@@ -308,13 +339,14 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
         </div>
       )}
 
-      {/* 工地动态 */}
+      {/* 工地动态（时间线） */}
       <div className="card p-4">
         <div className="mb-3 text-sm font-semibold">💬 工地动态</div>
-        <div className="space-y-3">
-          {logs.map((l) => (
-            <div key={l.id} className="overflow-hidden rounded-xl bg-zinc-50">
-              <div className="px-3.5 pt-3">
+        <div className="relative space-y-3 before:absolute before:bottom-2 before:left-[6px] before:top-2 before:w-px before:bg-zinc-100">
+          {logs.map((l, idx) => (
+            <div key={l.id} className="relative pl-6">
+              <span className={`absolute left-[2px] top-[13px] h-[9px] w-[9px] rounded-full ring-2 ring-white ${idx === 0 ? "bg-amber-400" : "bg-emerald-300"}`} />
+              <div className="rounded-xl bg-zinc-50 px-3.5 py-2.5">
                 <div className="flex items-center gap-2 text-[11px] text-zinc-400">
                   <span className="rounded-md bg-white px-1.5 py-0.5 font-medium text-zinc-600 ring-1 ring-zinc-200">{l.author}</span>
                   {l.step_name && <span>{l.step_name}</span>}
@@ -323,7 +355,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
                 <p className="mt-1.5 text-sm leading-relaxed">{l.content}</p>
               </div>
               {l.photo && (
-                <div className="px-3.5 pb-3 pt-2.5">
+                <div className="mt-2">
                   <ZoomImg
                     src={l.photo.startsWith("data:") ? l.photo : `/uploads/${l.photo}`}
                     alt="施工照片"

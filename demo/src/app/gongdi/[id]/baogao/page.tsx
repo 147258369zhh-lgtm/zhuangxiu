@@ -51,25 +51,27 @@ export default async function BaogaoPage({ params }: { params: Promise<{ id: str
       </div>
 
       <main className="mx-auto max-w-4xl px-6 py-8">
-        {/* 报告头 */}
-        <div className="card mb-5 flex items-center justify-between gap-6 px-6 py-5">
-          <div>
-            <div className="text-xs font-medium text-zinc-400">演示装饰公司 · 工地档案报告</div>
-            <h1 className="mt-1 text-xl font-bold">{site.name}</h1>
-            <div className="mt-1.5 text-xs text-zinc-500">
-              {site.community} · {site.layout} · 开工 {fmtDate(site.created_at)}
+        {/* 报告头（渐变） */}
+        <div className="card mb-5 overflow-hidden border-0 bg-gradient-to-r from-indigo-600 to-violet-600 p-0 text-white">
+          <div className="flex items-center justify-between gap-6 px-6 py-5">
+            <div>
+              <div className="text-xs font-medium text-indigo-100">演示装饰公司 · 工地档案报告</div>
+              <h1 className="mt-1 text-xl font-bold">{site.name}</h1>
+              <div className="mt-1.5 text-xs text-indigo-100">
+                {site.community} · {site.layout} · 开工 {fmtDate(site.created_at)}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-indigo-100">
+                <span>业主 <b className="text-white">{site.owner_name}</b></span>
+                <span>工长 <b className="text-white">{site.foreman}</b></span>
+                <span>合同额 <b className="text-white">¥{fmtMoney(site.budget)}</b></span>
+                <span>总进度 <b className="text-emerald-200">{pct}%</b></span>
+              </div>
             </div>
-            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500">
-              <span>业主 <b className="text-zinc-800">{site.owner_name}</b></span>
-              <span>工长 <b className="text-zinc-800">{site.foreman}</b></span>
-              <span>合同额 <b className="text-zinc-800">¥{fmtMoney(site.budget)}</b></span>
-              <span>总进度 <b className="text-indigo-600">{pct}%</b></span>
+            <div className="shrink-0 text-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qr} alt="业主端二维码" className="h-24 w-24 rounded-lg bg-white p-1" />
+              <div className="mt-1 font-mono text-[10px] text-indigo-100">{site.code}</div>
             </div>
-          </div>
-          <div className="shrink-0 text-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qr} alt="业主端二维码" className="h-24 w-24 rounded-lg ring-1 ring-zinc-100" />
-            <div className="mt-1 font-mono text-[10px] text-zinc-400">{site.code}</div>
           </div>
         </div>
 

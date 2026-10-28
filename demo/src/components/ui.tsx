@@ -14,9 +14,15 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function Progress({ value, tone = "indigo" }: { value: number; tone?: "indigo" | "amber" | "red" }) {
+export function Progress({ value, tone = "indigo" }: { value: number; tone?: "indigo" | "amber" | "red" | "emerald" }) {
   const bar =
-    tone === "red" ? "bg-red-500" : tone === "amber" ? "bg-amber-500" : "bg-indigo-600";
+    tone === "red"
+      ? "bg-red-500"
+      : tone === "amber"
+        ? "bg-amber-500"
+        : tone === "emerald"
+          ? "bg-emerald-500"
+          : "bg-indigo-600";
   const pct = Math.max(0, Math.min(100, Math.round(value)));
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
@@ -37,4 +43,11 @@ export function fmtTime(iso: string | null): string {
 
 export function fmtMoney(n: number): string {
   return Math.round(n || 0).toLocaleString("zh-CN");
+}
+
+/** 从 iso 到 toIso（默认现在）经过的整天数 */
+export function daysBetween(iso: string | null, toIso?: string | null): number {
+  if (!iso) return 0;
+  const end = toIso ? new Date(toIso).getTime() : Date.now();
+  return Math.max(0, Math.floor((end - new Date(iso).getTime()) / 86400000));
 }

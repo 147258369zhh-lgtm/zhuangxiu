@@ -1,13 +1,33 @@
 import Link from "next/link";
 import { listSitesWithProgress } from "@/lib/data";
 import { createSiteAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Progress, StatusBadge, fmtMoney, fmtTime } from "@/components/ui";
 
-export default function HomePage() {
+const FILTERS = [
+  { key: "all", label: "全部" },
+  { key: "active", label: "进行中" },
+  { key: "todo", label: "待开工" },
+  { key: "done", label: "已竣工" },
+] as const;
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ f?: string }>;
+}) {
+  const { f = "all" } = await searchParams;
   const list = listSitesWithProgress();
-  const active = list.filter(({ site, done, total }) => done > 0 && done < total).length;
+  const withStatus = list.map((x) => ({
+    ...x,
+    st: x.done === x.total ? "已竣工" : x.done > 0 ? "进行中" : "待开工",
+  }));
+  const filtered = f === "active" ? withStatus.filter((x) => x.st === "进行中") : f === "todo" ? withStatus.filter((x) => x.st === "待开工") : f === "done" ? withStatus.filter((x) => x.st === "已竣工") : withStatus;
+
+  const active = withStatus.filter((x) => x.st === "进行中").length;
   const budgetSum = list.reduce((s, { site }) => s + (site.budget || 0), 0);
   const extraSum = list.reduce((s, x) => s + x.extraAmount, 0);
+  const receivedSum = list.reduce((s, x) => s + x.receivedAmount, 0);
   const pendingTotal = list.reduce((s, x) => s + x.pendingChanges, 0);
 
   return (
@@ -33,8 +53,8 @@ export default function HomePage() {
           {[
             { icon: "🏗️", label: "在建工地", value: `${list.length}`, hint: `进行中 ${active}` },
             { icon: "💰", label: "在管合同", value: `¥${fmtMoney(budgetSum)}`, hint: `已确认增项 +¥${fmtMoney(extraSum)}` },
+            { icon: "🏦", label: "已收款项", value: `¥${fmtMoney(receivedSum)}`, hint: "全部工地合计" },
             { icon: "📋", label: "待业主处理", value: `${pendingTotal}`, hint: "增项确认单", warn: pendingTotal > 0 },
-            { icon: "📱", label: "业主端入口", value: "扫码即用", hint: "免注册 · 邀请码进入" },
           ].map((s) => (
             <div key={s.label} className={`card px-5 py-4 ${s.warn ? "ring-2 ring-amber-200" : ""}`}>
               <div className="flex items-center justify-between">
@@ -49,8 +69,39 @@ export default function HomePage() {
 
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
           <section className="space-y-4">
-            {list.map(({ site, done, total, pendingChanges, extraAmount }) => {
+            <div className="flex flex-wrap gap-2">
+              {FILTERS.map((flt) => {
+                const n =
+                  flt.key === "all"
+                    ? withStatus.length
+                    : withStatus.filter((x) => x.st === flt.label).length;
+                const on = f === flt.key;
+                return (
+                  <Link
+                    key={flt.key}
+                    href={flt.key === "all" ? "/" : `/?f=${flt.key}`}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
+                      on ? "bg-indigo-600 text-white shadow-sm" : "bg-white text-zinc-600 ring-1 ring-zinc-200 hover:ring-zinc-300"
+                    }`}
+                  >
+                    {flt.label}
+                    <span className={`font-mono ${on ? "text-indigo-200" : "text-zinc-400"}`}>{n}</span>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {filtered.length === 0 && (
+              <div className="card flex flex-col items-center justify-center gap-1 px-6 py-14 text-center">
+                <span className="text-2xl">🈳</span>
+                <div className="text-sm font-medium text-zinc-500">该状态下暂无工地</div>
+                <div className="text-xs text-zinc-400">切回"全部"或创建一个新工地</div>
+              </div>
+            )}
+
+            {filtered.map(({ site, done, total, pendingChanges, extraAmount, receivedAmount }) => {
               const pct = (done / total) * 100;
+              const payPct = site.budget > 0 ? Math.min(100, Math.round((receivedAmount / site.budget) * 100)) : 0;
               return (
                 <Link key={site.id} href={`/gongdi/${site.id}`} className="card block p-5 transition hover:border-indigo-300 hover:shadow-md">
                   <div className="flex items-start justify-between gap-3">
@@ -78,6 +129,7 @@ export default function HomePage() {
                     <span>业主 <b className="font-medium text-zinc-700">{site.owner_name}</b></span>
                     <span>工长 <b className="font-medium text-zinc-700">{site.foreman}</b></span>
                     <span>¥{fmtMoney(site.budget)}{extraAmount > 0 && <span className="text-emerald-600"> +¥{fmtMoney(extraAmount)}</span>}</span>
+                    <span className="text-emerald-600">已收 {payPct}%</span>
                     <span className="ml-auto text-zinc-400">{fmtTime(site.created_at)}</span>
                   </div>
                 </Link>
@@ -118,9 +170,9 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
-              <button className="btn btn-primary mt-4 w-full">创建工地</button>
+              <SubmitButton className="btn btn-primary mt-4 w-full" pending="创建中…">创建工地</SubmitButton>
               <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">
-                创建后自动生成六道标准工序和业主邀请二维码。
+                创建后自动生成六道标准工序（含工期）、付款计划与业主邀请二维码。
               </p>
             </form>
 

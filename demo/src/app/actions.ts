@@ -5,12 +5,16 @@ import { redirect } from "next/navigation";
 import { saveUpload } from "@/lib/upload";
 import {
   addLog,
+  arriveMaterial,
   confirmAccept,
   createChange,
+  createMaterial,
+  createPayment,
   createSite,
   decideChange,
   getSite,
   getSiteByCode,
+  receivePayment,
   setStepStatus,
   updateStepBudget,
   STEP_STATUS,
@@ -100,4 +104,44 @@ export async function decideChangeAction(fd: FormData) {
   const comment = String(fd.get("comment") || "").trim() || null;
   decideChange(id, decision, site.owner_name || "业主", comment);
   refresh(site.id, site.code);
+}
+
+/* ---------- 付款 ---------- */
+
+export async function receivePaymentAction(fd: FormData) {
+  const paymentId = String(fd.get("paymentId") || "");
+  const siteId = String(fd.get("siteId") || "");
+  if (!paymentId || !siteId) return;
+  receivePayment(paymentId);
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+export async function createPaymentAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const title = String(fd.get("title") || "").trim();
+  if (!siteId || !title) return;
+  createPayment(siteId, title, Number(fd.get("amount") || 0), String(fd.get("note") || "").trim());
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+/* ---------- 材料 ---------- */
+
+export async function createMaterialAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const name = String(fd.get("name") || "").trim();
+  if (!siteId || !name) return;
+  createMaterial(siteId, name, String(fd.get("spec") || "").trim(), String(fd.get("qty") || "").trim());
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+export async function arriveMaterialAction(fd: FormData) {
+  const materialId = String(fd.get("materialId") || "");
+  const siteId = String(fd.get("siteId") || "");
+  if (!materialId || !siteId) return;
+  arriveMaterial(materialId);
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
 }

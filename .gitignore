@@ -15,5 +15,8 @@ unpackage/
 .DS_Store
 Thumbs.db
 
+# demo 运行时数据
+demo/.data/
+
 # 外部开源参考（各自有独立 git 仓库，不并入主仓库）
 开源参考/

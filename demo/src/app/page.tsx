@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listSitesWithProgress, recentEvents, getSteps, getAccepts, countOverduePayments } from "@/lib/data";
+import { listSitesWithProgress, recentEvents, getSteps, getAccepts, getMaterials, getMessages, countOverduePayments } from "@/lib/data";
 import { getRole } from "@/lib/role";
 import { SITE_TEMPLATES } from "@/lib/checklists";
 import { createSiteAction } from "./actions";
@@ -44,9 +44,13 @@ export default async function HomePage({
   // 工长/监理视角的施工侧统计
   let activeSteps = 0;
   let pendingAccs = 0;
+  let matPending = 0;
+  let unreadMsgs = 0;
   for (const { site } of list) {
     activeSteps += getSteps(site.id).filter((s) => s.status === "进行中").length;
     pendingAccs += getAccepts(site.id).filter((a) => !a.done).length;
+    matPending += getMaterials(site.id).filter((m) => m.status !== "已进场").length;
+    unreadMsgs += getMessages(site.id).filter((m) => m.sender === "业主").length;
   }
   // 工长视角：动态流只保留自己工地的事件（不泄露其他工地的经营信息）
   const myCodes = new Set(list.map((x) => x.site.code));
@@ -115,6 +119,45 @@ export default async function HomePage({
                     <Link href="/caiwu" className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-100">
                       {overduePays} 笔收款已逾期
                     </Link>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 工长/监理行动条 */}
+        {role !== "boss" && (
+          <div className="card mb-6 border-l-4 border-l-indigo-500 px-5 py-4">
+            <div className="text-sm font-medium">{role === "supervisor" ? "今日跟进 👀" : "今日待办 🧰"}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+              {role === "foreman" ? (
+                <>
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-600 ring-1 ring-indigo-200">{activeSteps} 道工序进行中</span>
+                  {matPending > 0 && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200">{matPending} 项材料待进场</span>
+                  )}
+                  {unreadMsgs > 0 && list[0] && (
+                    <Link href={`/gongdi/${list[0].site.id}`} className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200 hover:bg-amber-100">
+                      {unreadMsgs} 条业主留言待回复
+                    </Link>
+                  )}
+                  {activeSteps === 0 && matPending === 0 && unreadMsgs === 0 && (
+                    <span className="text-emerald-600">暂无待办，进入工地推进工序或发布日志 ✓</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Link href="/zhijian" className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200 hover:bg-amber-100">
+                    {pendingAccs} 项待业主验收
+                  </Link>
+                  {delayedSites.length > 0 && (
+                    <Link href={`/gongdi/${delayedSites[0].site.id}`} className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-100">
+                      {delayedSites.length} 个工地工序超期
+                    </Link>
+                  )}
+                  {pendingAccs === 0 && delayedSites.length === 0 && (
+                    <span className="text-emerald-600">无待跟进事项 ✓</span>
                   )}
                 </>
               )}
@@ -291,8 +334,9 @@ export default async function HomePage({
               <div className="mb-2 text-sm font-semibold">📱 业主端（C端）</div>
               <p className="text-xs leading-relaxed text-zinc-500">业主端是手机页面，扫码或直接打开：</p>
               <div className="mt-2 flex flex-col gap-1.5 text-xs">
-                <Link href="/c/AX7K2M" className="font-mono text-indigo-600 hover:underline">/c/AX7K2M（王姐家 · 有增项待确认）</Link>
-                <Link href="/c/B3N8QK" className="font-mono text-indigo-600 hover:underline">/c/B3N8QK（李先生家 · 刚开工）</Link>
+                {list.map(({ site }) => (
+                  <Link key={site.code} href={`/c/${site.code}`} className="font-mono text-indigo-600 hover:underline">/c/{site.code}（{site.name}）</Link>
+                ))}
               </div>
               <p className="mt-2 text-[11px] text-zinc-400">浏览器打开后按 F12 切手机视图，效果最佳。</p>
             </div>

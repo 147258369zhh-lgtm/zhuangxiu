@@ -39,7 +39,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
 
   return (
     <div className="mx-auto max-w-md px-4 pb-28 pt-6">
-      <div className="mb-5">
+      <div className="mb-4">
         <div className="text-xs font-medium text-amber-600">{site.community}</div>
         <h1 className="mt-0.5 text-xl font-bold">{site.name}</h1>
         <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-zinc-500">
@@ -50,7 +50,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
       </div>
 
       {(pendingChanges.length > 0 || accepts.some((a) => !a.done)) && (
-        <div className="mb-5 flex items-center gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
+        <div className="mb-4 flex items-center gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
           <span className="text-base">🔔</span>
           <div className="text-xs leading-relaxed text-amber-800">
             待你处理：
@@ -62,7 +62,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
       )}
 
       {/* 总进度 */}
-      <div className="card mb-5 p-5">
+      <div className="card mb-4 p-4">
         <div className="flex items-end justify-between">
           <div>
             <div className="text-xs text-zinc-500">装修总进度</div>
@@ -91,7 +91,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
       </div>
 
       {/* 付款进度 */}
-      <div className="card mb-5 p-5">
+      <div className="card mb-4 p-4">
         <div className="mb-1 flex items-baseline justify-between">
           <div className="text-sm font-semibold">💰 付款进度</div>
           <div className="text-[11px] text-zinc-400">已收 ¥{fmtMoney(receivedSum)} / 合同 ¥{fmtMoney(site.budget)}</div>
@@ -122,7 +122,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
       </div>
 
       {/* 预算执行 */}
-      <div className="card mb-5 p-5">
+      <div className="card mb-4 p-4">
         <div className="mb-1 flex items-baseline justify-between">
           <div className="text-sm font-semibold">📊 预算执行</div>
           <div className="text-[11px] text-zinc-400">计划 ¥{fmtMoney(plannedSum)} · 实际 ¥{fmtMoney(actualSum)}</div>
@@ -150,7 +150,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
 
       {/* 增项确认 */}
       {changes.length > 0 && (
-        <div id="changes" className="card mb-5 scroll-mt-4 p-5">
+        <div id="changes" className="card mb-4 scroll-mt-4 p-4">
           <div className="mb-1 text-sm font-semibold">📋 增项确认</div>
           <p className="mb-3 text-[11px] text-zinc-400">任何加钱的项目都会先推送给你，确认后才执行——线上签字，避免扯皮。</p>
           <div className="space-y-3">
@@ -186,7 +186,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
 
       {/* 材料进场 */}
       {materials.length > 0 && (
-        <div className="card mb-5 p-5">
+        <div className="card mb-4 p-4">
           <div className="mb-1 flex items-baseline justify-between">
             <div className="text-sm font-semibold">📦 材料进场</div>
             <div className="text-[11px] text-zinc-400">已进场 {matDone}/{materials.length}</div>
@@ -207,7 +207,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
       )}
 
       {/* 验收打卡 */}
-      <div id="accept" className="card mb-5 scroll-mt-4 p-5">
+      <div id="accept" className="card mb-4 scroll-mt-4 p-4">
         <div className="mb-1 flex items-baseline justify-between">
           <div className="text-sm font-semibold">📋 验收打卡</div>
           <div className="text-[11px] text-zinc-400">已确认 {accDone}/{accepts.length}</div>
@@ -260,7 +260,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
       </div>
 
       {/* 留言板 */}
-      <div className="card mb-5 p-5">
+      <div className="card mb-4 p-4">
         <div className="mb-1 text-sm font-semibold">💬 留言板</div>
         <p className="mb-3 text-[11px] text-zinc-400">和{site.foreman}直接沟通，双方可见、全程留痕。</p>
         <div className="space-y-2.5">
@@ -286,7 +286,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
 
       {/* 保修权益 */}
       {warranties.length > 0 && (
-        <div className="card mb-5 p-5">
+        <div className="card mb-4 p-4">
           <div className="mb-1 text-sm font-semibold">🛡️ 保修权益</div>
           <p className="mb-3 text-[11px] text-zinc-400">竣工验收后自动起保；保修期内出现质量问题，在留言板报修即可，公司按《住宅装饰装修保修单》约定响应。</p>
           <div className="space-y-2">
@@ -309,7 +309,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
       )}
 
       {/* 工地动态 */}
-      <div className="card p-5">
+      <div className="card p-4">
         <div className="mb-3 text-sm font-semibold">💬 工地动态</div>
         <div className="space-y-3">
           {logs.map((l) => (

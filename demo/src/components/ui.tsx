@@ -37,7 +37,15 @@ export function DueBadge({ due, status }: { due: string | null; status: string }
   );
 }
 
-export function Progress({ value, tone = "indigo" }: { value: number; tone?: "indigo" | "amber" | "red" | "emerald" }) {
+export function Progress({
+  value,
+  tone = "indigo",
+  thin = false,
+}: {
+  value: number;
+  tone?: "indigo" | "amber" | "red" | "emerald";
+  thin?: boolean;
+}) {
   const bar =
     tone === "red"
       ? "bg-red-500"
@@ -48,7 +56,7 @@ export function Progress({ value, tone = "indigo" }: { value: number; tone?: "in
           : "bg-indigo-600";
   const pct = Math.max(0, Math.min(100, Math.round(value)));
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+    <div className={`${thin ? "h-1.5" : "h-2"} w-full overflow-hidden rounded-full bg-zinc-100`}>
       <div className={`h-full rounded-full transition-all ${bar}`} style={{ width: `${pct}%` }} />
     </div>
   );

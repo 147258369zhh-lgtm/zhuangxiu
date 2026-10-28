@@ -299,24 +299,26 @@ export default async function HomePage({
 
             <div className="card p-5">
               <div className="mb-3 text-sm font-semibold">🕐 最近动态</div>
-              <div className="space-y-2">
+              <div className="relative space-y-3 before:absolute before:bottom-1 before:left-[5px] before:top-1 before:w-px before:bg-zinc-100">
                 {events.length === 0 && <p className="text-xs text-zinc-400">还没有动态。</p>}
                 {events.map((e, i) => {
-                  const icon = e.type === "log" ? "📝" : e.type === "accept" ? "✅" : e.type === "pay" ? "💰" : "💬";
                   const text =
                     e.type === "log" ? `${e.author} 发布日志`
                     : e.type === "accept" ? `${e.author} 验收通过`
                     : e.type === "pay" ? `收到款项`
                     : `${e.author} 留言`;
+                  const dot =
+                    e.type === "log" ? "bg-indigo-300"
+                    : e.type === "accept" ? "bg-emerald-400"
+                    : e.type === "pay" ? "bg-emerald-500"
+                    : "bg-amber-300";
                   return (
-                    <div key={i} className="flex items-start gap-2.5 rounded-lg bg-zinc-50 px-3 py-2">
-                      <span className="mt-0.5 text-sm">{icon}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs text-zinc-700">{text}：{e.text || e.extra}</div>
-                        <div className="mt-0.5 flex items-center justify-between text-[10px] text-zinc-400">
-                          <Link href={`/c/${e.code}`} className="font-mono hover:text-indigo-600 hover:underline">{e.site}</Link>
-                          <span>{fmtTime(e.at)}</span>
-                        </div>
+                    <div key={i} className="relative pl-5">
+                      <span className={`absolute left-0 top-[3px] h-[11px] w-[11px] rounded-full border-2 border-white ${dot}`} />
+                      <div className="truncate text-xs text-zinc-700">{text}：{e.text || e.extra}</div>
+                      <div className="mt-0.5 flex items-center justify-between text-[10px] text-zinc-400">
+                        <Link href={`/c/${e.code}`} className="font-mono hover:text-indigo-600 hover:underline">{e.site}</Link>
+                        <span>{fmtTime(e.at)}</span>
                       </div>
                     </div>
                   );

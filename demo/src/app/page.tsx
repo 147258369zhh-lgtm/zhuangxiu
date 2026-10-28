@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listSitesWithProgress } from "@/lib/data";
+import { listSitesWithProgress, recentEvents } from "@/lib/data";
 import { createSiteAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Progress, StatusBadge, fmtMoney, fmtTime } from "@/components/ui";
@@ -29,6 +29,7 @@ export default async function HomePage({
   const extraSum = list.reduce((s, x) => s + x.extraAmount, 0);
   const receivedSum = list.reduce((s, x) => s + x.receivedAmount, 0);
   const pendingTotal = list.reduce((s, x) => s + x.pendingChanges, 0);
+  const events = recentEvents(6);
 
   return (
     <div>
@@ -184,6 +185,36 @@ export default async function HomePage({
                 <Link href="/c/B3N8QK" className="font-mono text-indigo-600 hover:underline">/c/B3N8QK（李先生家 · 刚开工）</Link>
               </div>
               <p className="mt-2 text-[11px] text-zinc-400">浏览器打开后按 F12 切手机视图，效果最佳。</p>
+            </div>
+
+            <div className="card p-5">
+              <div className="mb-3 text-sm font-semibold">🕐 最近动态</div>
+              <div className="space-y-2">
+                {events.length === 0 && <p className="text-xs text-zinc-400">还没有动态。</p>}
+                {events.map((e, i) => {
+                  const icon = e.type === "log" ? "📝" : e.type === "accept" ? "✅" : e.type === "pay" ? "💰" : "💬";
+                  const text =
+                    e.type === "log"
+                      ? `${e.author} 发布日志`
+                      : e.type === "accept"
+                        ? `${e.author} 验收通过`
+                        : e.type === "pay"
+                          ? `收到款项`
+                          : `${e.author} 留言`;
+                  return (
+                    <div key={i} className="flex items-start gap-2.5 rounded-lg bg-zinc-50 px-3 py-2">
+                      <span className="mt-0.5 text-sm">{icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs text-zinc-700">{text}：{e.text || e.extra}</div>
+                        <div className="mt-0.5 flex items-center justify-between text-[10px] text-zinc-400">
+                          <Link href={`/c/${e.code}`} className="font-mono hover:text-indigo-600 hover:underline">{e.site}</Link>
+                          <span>{fmtTime(e.at)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </aside>
         </div>

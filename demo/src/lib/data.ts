@@ -174,3 +174,54 @@ export function arriveMaterial(id: string) {
   db.prepare("UPDATE materials SET status='已进场', arrived_at=? WHERE id=? AND status='待进场'")
     .run(new Date().toISOString(), id);
 }
+
+/* ---------- 留言板 ---------- */
+
+export type Message = { id: string; site_id: string; sender: string; author: string; content: string; created_at: string };
+
+export const getMessages = (siteId: string) =>
+  all<Message>("SELECT * FROM messages WHERE site_id=? ORDER BY created_at", siteId);
+
+export function addMessage(siteId: string, sender: string, author: string, content: string) {
+  db.prepare("INSERT INTO messages (id, site_id, sender, author, content, created_at) VALUES (?,?,?,?,?,?)").run(
+    randomUUID(), siteId, sender, author, content, new Date().toISOString()
+  );
+}
+
+/* ---------- 验收项（B端自定义） ---------- */
+
+export function createAccept(siteId: string, stepName: string, item: string) {
+  db.prepare("INSERT INTO accepts (id, site_id, step_name, item, done) VALUES (?,?,?,?,0)").run(
+    randomUUID(), siteId, stepName, item
+  );
+}
+
+/* ---------- 编辑工地 ---------- */
+
+export function updateSite(id: string, input: { name: string; community: string; owner: string; layout: string; foreman: string; budget: number }) {
+  db.prepare("UPDATE sites SET name=?, community=?, owner_name=?, layout=?, foreman=?, budget=? WHERE id=?").run(
+    input.name, input.community, input.owner, input.layout, input.foreman, input.budget, id
+  );
+}
+
+/* ---------- 全局动态流 ---------- */
+
+export type RecentEvent = { type: string; code: string; site: string; author: string; extra: string | null; text: string; at: string | null };
+
+export function recentEvents(limit = 6): RecentEvent[] {
+  return all<RecentEvent>(
+    `SELECT 'log' AS type, s.code, s.name AS site, l.author, l.step_name AS extra, l.content AS text, l.created_at AS at
+       FROM logs l JOIN sites s ON s.id = l.site_id
+      UNION ALL
+      SELECT 'accept', s.code, s.name, COALESCE(a.checked_by,'业主'), a.step_name, a.item, a.checked_at
+       FROM accepts a JOIN sites s ON s.id = a.site_id WHERE a.done = 1
+      UNION ALL
+      SELECT 'pay', s.code, s.name, '财务', p.title, p.note, p.paid_at
+       FROM payments p JOIN sites s ON s.id = p.site_id WHERE p.status = '已收款'
+      UNION ALL
+      SELECT 'msg', s.code, s.name, m.author, m.sender, m.content, m.created_at
+       FROM messages m JOIN sites s ON s.id = m.site_id
+      ORDER BY at DESC LIMIT ?`,
+    limit
+  );
+}

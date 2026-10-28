@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { getAccepts, getChanges, getLogs, getMaterials, getPayments, getSiteByCode, getSteps } from "@/lib/data";
-import { confirmAcceptAction, decideChangeAction } from "@/app/actions";
+import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSiteByCode, getSteps } from "@/lib/data";
+import { confirmAcceptAction, decideChangeAction, sendOwnerMessageAction } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
 import { Progress, StatusBadge, daysBetween, fmtMoney, fmtTime } from "@/components/ui";
@@ -15,6 +15,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
   const changes = getChanges(site.id);
   const payments = getPayments(site.id);
   const materials = getMaterials(site.id);
+  const messages = getMessages(site.id);
 
   const stepDone = steps.filter((s) => s.status === "已完成").length;
   const pct = steps.length ? (stepDone / steps.length) * 100 : 0;
@@ -255,6 +256,31 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
             </div>
           ))}
         </div>
+      </div>
+
+      {/* 留言板 */}
+      <div className="card mb-5 p-5">
+        <div className="mb-1 text-sm font-semibold">💬 留言板</div>
+        <p className="mb-3 text-[11px] text-zinc-400">和{site.foreman}直接沟通，双方可见、全程留痕。</p>
+        <div className="space-y-2.5">
+          {messages.map((m) => (
+            <div key={m.id} className={`flex ${m.sender === "业主" ? "justify-end" : "justify-start"}`}>
+              <div className="max-w-[85%]">
+                <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${m.sender === "业主" ? "rounded-br-md bg-indigo-600 text-white" : "rounded-bl-md bg-zinc-100 text-zinc-800"}`}>
+                  {m.content}
+                </div>
+                <div className={`mt-0.5 text-[10px] text-zinc-400 ${m.sender === "业主" ? "text-right" : ""}`}>
+                  {m.author} · {fmtTime(m.created_at)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <form action={sendOwnerMessageAction} className="mt-3 flex gap-2 border-t border-zinc-100 pt-3">
+          <input type="hidden" name="code" value={site.code} />
+          <input name="content" className="input min-w-0 flex-1 px-3 py-2 text-sm" placeholder={`给${site.foreman}留言…`} />
+          <SubmitButton className="btn btn-primary shrink-0 px-4 py-2 text-sm" pending="…">发送</SubmitButton>
+        </form>
       </div>
 
       {/* 工地动态 */}

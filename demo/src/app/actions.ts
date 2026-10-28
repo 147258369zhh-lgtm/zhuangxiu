@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 import { saveUpload } from "@/lib/upload";
 import {
   addLog,
+  addMessage,
   arriveMaterial,
   confirmAccept,
+  createAccept,
   createChange,
   createMaterial,
   createPayment,
@@ -16,6 +18,7 @@ import {
   getSiteByCode,
   receivePayment,
   setStepStatus,
+  updateSite,
   updateStepBudget,
   STEP_STATUS,
 } from "@/lib/data";
@@ -144,4 +147,54 @@ export async function arriveMaterialAction(fd: FormData) {
   arriveMaterial(materialId);
   const site = getSite(siteId);
   refresh(siteId, site?.code);
+}
+
+/* ---------- 验收项 ---------- */
+
+export async function createAcceptAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const stepName = String(fd.get("stepName") || "").trim();
+  const item = String(fd.get("item") || "").trim();
+  if (!siteId || !stepName || !item) return;
+  createAccept(siteId, stepName, item);
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+/* ---------- 编辑工地 ---------- */
+
+export async function updateSiteAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const name = String(fd.get("name") || "").trim();
+  if (!siteId || !name) return;
+  updateSite(siteId, {
+    name,
+    community: String(fd.get("community") || ""),
+    owner: String(fd.get("owner") || ""),
+    layout: String(fd.get("layout") || ""),
+    foreman: String(fd.get("foreman") || ""),
+    budget: Number(fd.get("budget") || 0),
+  });
+  refresh(siteId);
+}
+
+/* ---------- 留言板 ---------- */
+
+export async function sendStaffMessageAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const content = String(fd.get("content") || "").trim();
+  if (!siteId || !content) return;
+  const author = String(fd.get("author") || "工长");
+  addMessage(siteId, "工长", author, content);
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+export async function sendOwnerMessageAction(fd: FormData) {
+  const code = String(fd.get("code") || "");
+  const content = String(fd.get("content") || "").trim();
+  const site = getSiteByCode(code);
+  if (!site || !content) return;
+  addMessage(site.id, "业主", site.owner_name || "业主", content);
+  refresh(site.id, site.code);
 }

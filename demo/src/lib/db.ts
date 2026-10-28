@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS materials (
   arrived_at TEXT,
   sort INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  sender TEXT NOT NULL,
+  author TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `);
 
 // 旧库平滑升级：缺列自动补（dev 迭代友好）
@@ -239,6 +247,26 @@ if (cnt.c === 0) {
   mat(s2, "PPR 给水管 · 伟星", "4分/6分 冷热水", "全套", "已进场", 4, 1);
   mat(s2, "墙地砖 · 东鹏", "750×1500 通体大理石", "128㎡ 用量", "待进场", null, 2);
   mat(s2, "乳胶漆 · 立邦", "抗甲醛五合一", "3 底 + 5 面", "待进场", null, 3);
+}
+
+// 留言板种子（独立判断，老库也能自动补齐）
+const msgCnt = db.prepare("SELECT COUNT(*) AS n FROM messages").get() as { n: number };
+if (msgCnt.n === 0) {
+  const byCode = (code: string) =>
+    db.prepare("SELECT id FROM sites WHERE code=?").get(code) as { id: string } | undefined;
+  const m1 = byCode("AX7K2M");
+  const m2 = byCode("B3N8QK");
+  const insMsg = db.prepare("INSERT INTO messages (id, site_id, sender, author, content, created_at) VALUES (?,?,?,?,?,?)");
+  const mNow = Date.now();
+  if (m1) {
+    insMsg.run(randomUUID(), m1.id, "业主", "王女士", "李工长，瓦工大概什么时候能完？我周末想去看下瓷砖。", new Date(mNow - 2 * 86400000).toISOString());
+    insMsg.run(randomUUID(), m1.id, "工长", "李工长", "王姐，墙砖明天贴完，地砖后天，周五下午来看整体效果正好。", new Date(mNow - 1.9 * 86400000).toISOString());
+    insMsg.run(randomUUID(), m1.id, "业主", "王女士", "好的，那我周五下午过去 👍", new Date(mNow - 1.5 * 86400000).toISOString());
+  }
+  if (m2) {
+    insMsg.run(randomUUID(), m2.id, "业主", "李先生", "水电定位能不能在主卧电视墙再加一个网口？", new Date(mNow - 0.5 * 86400000).toISOString());
+    insMsg.run(randomUUID(), m2.id, "工长", "赵工长", "可以的，明天师傅到场加一个，不额外收费。", new Date(mNow - 0.4 * 86400000).toISOString());
+  }
 }
 
 export default db;

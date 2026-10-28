@@ -2,15 +2,18 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { getAccepts, getChanges, getLogs, getMaterials, getPayments, getSite, getSteps } from "@/lib/data";
+import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSite, getSteps } from "@/lib/data";
 import {
   addLogAction,
   advanceStepAction,
   arriveMaterialAction,
+  createAcceptAction,
   createChangeAction,
   createMaterialAction,
   createPaymentAction,
   receivePaymentAction,
+  sendStaffMessageAction,
+  updateSiteAction,
   updateStepBudgetAction,
 } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -27,6 +30,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
   const changes = getChanges(site.id);
   const payments = getPayments(site.id);
   const materials = getMaterials(site.id);
+  const messages = getMessages(site.id);
 
   const host = (await headers()).get("host") ?? "localhost:3300";
   const inviteUrl = `http://${host}/c/${site.code}`;
@@ -100,6 +104,39 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
             <span>已收 <b className="text-emerald-600">¥{fmtMoney(receivedSum)}</b></span>
             <span>邀请码 <b className="font-mono text-indigo-600">{site.code}</b></span>
           </div>
+          <details className="no-print mt-2 w-full">
+            <summary className="cursor-pointer text-[11px] font-medium text-indigo-600 hover:text-indigo-500">✏️ 编辑工地信息</summary>
+            <form action={updateSiteAction} className="mt-3 grid gap-3 md:grid-cols-3">
+              <input type="hidden" name="siteId" value={site.id} />
+              <div className="md:col-span-2">
+                <label className="label">工地名称</label>
+                <input name="name" defaultValue={site.name} className="input" />
+              </div>
+              <div>
+                <label className="label">小区</label>
+                <input name="community" defaultValue={site.community ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">业主</label>
+                <input name="owner" defaultValue={site.owner_name ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">户型</label>
+                <input name="layout" defaultValue={site.layout ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">工长</label>
+                <input name="foreman" defaultValue={site.foreman ?? ""} className="input" />
+              </div>
+              <div>
+                <label className="label">合同额（¥）</label>
+                <input name="budget" type="number" defaultValue={site.budget} className="input" />
+              </div>
+              <div className="flex items-end">
+                <SubmitButton className="btn btn-primary w-full text-xs" pending="保存中…">保存修改</SubmitButton>
+              </div>
+            </form>
+          </details>
         </div>
 
         {/* 工期甘特图（全宽） */}
@@ -342,6 +379,37 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
               </form>
             </section>
 
+            {/* 留言板 */}
+            <section className="card p-5">
+              <div className="mb-1 flex items-baseline justify-between">
+                <span className="text-sm font-semibold">💬 留言板</span>
+                <span className="text-[11px] text-zinc-400">与业主直接沟通 · 双方实时可见</span>
+              </div>
+              <div className="space-y-2.5">
+                {messages.length === 0 && <p className="text-xs text-zinc-400">还没有留言。</p>}
+                {messages.map((m) => (
+                  <div key={m.id} className={`flex ${m.sender === "工长" ? "justify-end" : "justify-start"}`}>
+                    <div className="max-w-[85%]">
+                      <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${m.sender === "工长" ? "rounded-br-md bg-indigo-600 text-white" : "rounded-bl-md bg-zinc-100 text-zinc-800"}`}>
+                        {m.content}
+                      </div>
+                      <div className={`mt-0.5 text-[10px] text-zinc-400 ${m.sender === "工长" ? "text-right" : ""}`}>
+                        {m.author} · {fmtTime(m.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <form action={sendStaffMessageAction} className="mt-3 flex gap-2 border-t border-zinc-100 pt-3">
+                <input type="hidden" name="siteId" value={site.id} />
+                <select name="author" className="input w-24 shrink-0 px-2 py-2 text-xs">
+                  {["李工长", "赵工长", "张监理", "项目经理"].map((a) => <option key={a}>{a}</option>)}
+                </select>
+                <input name="content" className="input min-w-0 flex-1 px-3 py-2 text-sm" placeholder={`回复 ${site.owner_name ?? "业主"}…`} />
+                <SubmitButton className="btn btn-primary shrink-0 px-4 py-2 text-sm" pending="…">发送</SubmitButton>
+              </form>
+            </section>
+
             {/* 工地日志 */}
             <section className="card p-5">
               <div className="mb-4 text-sm font-semibold">📝 工地日志 <span className="ml-1 text-xs font-normal text-zinc-400">业主端实时可见</span></div>
@@ -459,6 +527,19 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                   );
                 })}
               </div>
+              <form action={createAcceptAction} className="no-print mt-4 border-t border-zinc-100 pt-3">
+                <input type="hidden" name="siteId" value={site.id} />
+                <div className="flex gap-1.5">
+                  <select name="stepName" defaultValue={steps.find((s) => s.status === "进行中")?.name} className="input w-24 shrink-0 px-2 py-1.5 text-[11px]">
+                    {steps.map((s) => <option key={s.id}>{s.name}</option>)}
+                  </select>
+                  <input name="item" className="input min-w-0 flex-1 px-2.5 py-1.5 text-[11px]" placeholder="验收项，如：瓷砖缝隙均匀" />
+                  <SubmitButton className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[11px]" pending="…">添加</SubmitButton>
+                </div>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-400">
+                  新建工地时验收清单为空，按工序逐项添加后，业主端即可扫码打卡。
+                </p>
+              </form>
             </section>
           </aside>
         </div>

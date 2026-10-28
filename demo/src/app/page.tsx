@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { listSitesWithProgress, recentEvents, getSteps, getAccepts } from "@/lib/data";
+import { listSitesWithProgress, recentEvents, getSteps, getAccepts, countOverduePayments } from "@/lib/data";
 import { getRole } from "@/lib/role";
+import { SITE_TEMPLATES } from "@/lib/checklists";
 import { createSiteAction } from "./actions";
 import { BShell } from "@/components/BShell";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -37,6 +38,8 @@ export default async function HomePage({
   const extraSum = list.reduce((s, x) => s + x.extraAmount, 0);
   const receivedSum = list.reduce((s, x) => s + x.receivedAmount, 0);
   const pendingTotal = list.reduce((s, x) => s + x.pendingChanges, 0);
+  const delayedSites = list.filter((x) => x.delayDays > 0);
+  const overduePays = role === "boss" ? countOverduePayments() : 0;
 
   // 工长/监理视角的施工侧统计
   let activeSteps = 0;
@@ -90,6 +93,35 @@ export default async function HomePage({
           <p className="mt-1 text-sm text-zinc-500">{pageDesc}</p>
         </div>
 
+        {/* 老板行动条（今日优先处理） */}
+        {role === "boss" && (
+          <div className="card mb-6 border-l-4 border-l-indigo-500 px-5 py-4">
+            <div className="text-sm font-medium">早上好 👋</div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+              {delayedSites.length === 0 && pendingTotal === 0 && overduePays === 0 ? (
+                <span className="text-emerald-600">所有工地按计划推进，无待处理事项 ✓</span>
+              ) : (
+                <>
+                  <span className="text-zinc-600">今日优先处理：</span>
+                  {delayedSites.length > 0 && (
+                    <Link href={`/gongdi/${delayedSites[0].site.id}`} className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-100">
+                      {delayedSites.length} 个工地工序超期
+                    </Link>
+                  )}
+                  {pendingTotal > 0 && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200">{pendingTotal} 笔增项待业主确认</span>
+                  )}
+                  {overduePays > 0 && (
+                    <Link href="/caiwu" className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-600 ring-1 ring-red-200 hover:bg-red-100">
+                      {overduePays} 笔收款已逾期
+                    </Link>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           {cards.map((s) => (
             <div key={s.label} className={`card px-5 py-4 ${s.warn ? "ring-2 ring-amber-200" : ""}`}>
@@ -134,15 +166,21 @@ export default async function HomePage({
               </div>
             )}
 
-            {filtered.map(({ site, done, total, pendingChanges, extraAmount, receivedAmount }) => {
+            {filtered.map(({ site, done, total, pendingChanges, extraAmount, receivedAmount, delayDays }) => {
               const pct = (done / total) * 100;
               const payPct = site.budget > 0 ? Math.min(100, Math.round((receivedAmount / site.budget) * 100)) : 0;
               return (
-                <Link key={site.id} href={`/gongdi/${site.id}`} className="card block p-5 transition hover:border-indigo-300 hover:shadow-md">
+                <Link key={site.id} href={`/gongdi/${site.id}`} className="card relative block p-5 transition hover:border-indigo-300 hover:shadow-md">
+                  {delayDays > 0 && <i className="absolute bottom-4 left-0 top-4 w-1 rounded-r-full bg-red-400" />}
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-[15px] font-semibold">{site.name}</span>
+                        {delayDays > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-200">
+                            ⚠ 已延期 {delayDays} 天
+                          </span>
+                        )}
                         {pendingChanges > 0 && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-200">
                             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" /> {pendingChanges} 笔增项待确认
@@ -178,6 +216,15 @@ export default async function HomePage({
                 <div className="mb-4 text-sm font-semibold">➕ 新建工地</div>
                 <div className="space-y-3">
                   <div>
+                    <label className="label">工地模板</label>
+                    <select name="template" className="input">
+                      {SITE_TEMPLATES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                    </select>
+                    <p className="mt-1 text-[10px] text-zinc-400">
+                      {SITE_TEMPLATES.map((t) => `${t.label}：${t.desc}`).join("；")}
+                    </p>
+                  </div>
+                  <div>
                     <label className="label">工地名称（楼栋号）</label>
                     <input name="name" className="input" placeholder="如：5-1-201 陈先生的新家" required />
                   </div>
@@ -208,7 +255,7 @@ export default async function HomePage({
                 </div>
                 <SubmitButton className="btn btn-primary mt-4 w-full" pending="创建中…">创建工地</SubmitButton>
                 <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">
-                  创建后自动生成六道标准工序（含工期）、付款计划与业主邀请二维码；验收项请在工地详情按工序添加。
+                  按所选模板自动生成标准工序（含工期）、逐项验收清单、30/35/35 付款计划（含到期日）与业主邀请二维码。
                 </p>
               </form>
             )}

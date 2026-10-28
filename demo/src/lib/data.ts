@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import db from "./db";
+import db, { genCode } from "./db";
+import { STEP_TEMPLATES, ACCEPT_TEMPLATES, PAYMENT_TEMPLATES, type SiteTemplate } from "./checklists";
 
 export type Site = {
   id: string; code: string; name: string; community: string | null;
@@ -22,7 +23,10 @@ export type Change = {
 };
 export type Payment = {
   id: string; site_id: string; title: string; amount: number;
-  status: "待收款" | "已收款"; paid_at: string | null; note: string | null; created_at: string;
+  status: "待收款" | "已收款"; paid_at: string | null; note: string | null; created_at: string; due_date: string | null;
+};
+export type Warranty = {
+  id: string; site_id: string; item: string; start_date: string; months: number; end_date: string; note: string | null;
 };
 export type Material = {
   id: string; site_id: string; name: string; spec: string | null; qty: string | null;
@@ -52,7 +56,15 @@ export function listSitesWithProgress() {
     const received = get<{ s: number }>(
       "SELECT COALESCE(SUM(amount),0) AS s FROM payments WHERE site_id=? AND status='已收款'", site.id
     )!;
-    return { site, done: c.done ?? 0, total: c.total || 1, pendingChanges: pending.n, extraAmount: extra.s, receivedAmount: received.s };
+    // 风险：进行中工序超期天数（取最大）
+    const d = get<{ n: number }>(
+      `SELECT COALESCE(MAX(CAST((julianday('now','localtime') - julianday(started_at) - planned_days) AS INTEGER)),0) AS n
+         FROM steps WHERE site_id=? AND status='进行中' AND started_at IS NOT NULL AND planned_days > 0`, site.id
+    )!;
+    return {
+      site, done: c.done ?? 0, total: c.total || 1, pendingChanges: pending.n,
+      extraAmount: extra.s, receivedAmount: received.s, delayDays: Math.max(0, d.n),
+    };
   });
 }
 
@@ -68,20 +80,41 @@ const STEP_TEMPLATE: [string, number][] = [
 
 export function createSite(input: {
   name: string; community: string; owner: string; layout: string; foreman: string; budget: number;
+  template?: string;
 }): string {
   const siteId = randomUUID();
   const code = genCode();
+  const template = (input.template && input.template in STEP_TEMPLATES ? input.template : "全屋翻新") as SiteTemplate;
+  const tpl = STEP_TEMPLATES[template];
   db.prepare(
     "INSERT INTO sites (id, code, name, community, owner_name, layout, foreman, budget, created_at) VALUES (?,?,?,?,?,?,?,?,?)"
   ).run(siteId, code, input.name, input.community, input.owner, input.layout, input.foreman, input.budget, new Date().toISOString());
   const ins = db.prepare(
     "INSERT INTO steps (id, site_id, name, sort, status, planned, actual, planned_days, started_at) VALUES (?,?,?,?,?,?,?,?,?)"
   );
-  STEP_TEMPLATE.forEach(([n, days], i) =>
+  tpl.forEach(([n, days], i) =>
     ins.run(randomUUID(), siteId, n, i, i === 0 ? "进行中" : "待开工", 0, 0, days, i === 0 ? new Date().toISOString() : null)
   );
+
+  // 按模板生成标准验收清单（业主端即刻可打卡）
+  const insAcc = db.prepare("INSERT INTO accepts (id, site_id, step_name, item, done) VALUES (?,?,?,?,0)");
+  for (const [n] of tpl) {
+    for (const item of ACCEPT_TEMPLATES[n] ?? []) insAcc.run(randomUUID(), siteId, n, item);
+  }
+
+  // 按模板生成付款计划（含到期日）
+  const insPay = db.prepare("INSERT INTO payments (id, site_id, title, amount, status, note, created_at, due_date) VALUES (?,?,?,?,?,?,?,?)");
+  const now = Date.now();
+  for (const [title, ratio, dueDays] of PAYMENT_TEMPLATES) {
+    insPay.run(randomUUID(), siteId, title, Math.round(input.budget * ratio), "待收款",
+      title.includes("首期") ? "签约当天收讫" : title.includes("中期") ? "瓦工过半节点" : "竣工验收合格后",
+      new Date(now).toISOString(), new Date(now + dueDays * 86400000).toISOString());
+  }
+
   db.prepare("INSERT INTO logs (id, site_id, author, step_name, content, photo, created_at) VALUES (?,?,?,?,?,?,?)").run(
-    randomUUID(), siteId, "系统", "水电改造", "工地创建完成，水电定位进行中。", null, new Date().toISOString()
+    randomUUID(), siteId, "系统", tpl[0][0],
+    `工地创建完成（${template}模板）：已生成 ${tpl.length} 道标准工序、验收清单与付款计划，水电定位进行中。`,
+    null, new Date().toISOString()
   );
   return siteId;
 }
@@ -230,12 +263,20 @@ export function recentEvents(limit = 6): RecentEvent[] {
 
 export type PaymentRow = Payment & { site_name: string; code: string };
 
-/** 全部工地的付款节点：待收款在前 */
+/** 全部工地的付款节点：逾期 > 待收 > 已收，待收按到期日升序 */
 export function listAllPayments(): PaymentRow[] {
-  return all<PaymentRow>(
+  const rows = all<PaymentRow>(
     `SELECT p.*, s.name AS site_name, s.code
-       FROM payments p JOIN sites s ON s.id = p.site_id
-      ORDER BY CASE p.status WHEN '待收款' THEN 0 ELSE 1 END, s.name, p.rowid`
+       FROM payments p JOIN sites s ON s.id = p.site_id`
+  );
+  const now = Date.now();
+  const rank = (r: PaymentRow) =>
+    r.status !== "待收款" ? 2 : r.due_date && new Date(r.due_date).getTime() < now ? 0 : 1;
+  return rows.sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999") ||
+      a.site_name.localeCompare(b.site_name)
   );
 }
 
@@ -273,3 +314,25 @@ export function countPendingAccepts(): number {
 export function countPendingPayments(): number {
   return (get<{ n: number }>("SELECT COUNT(*) AS n FROM payments WHERE status='待收款'")!).n;
 }
+
+/** 逾期未收的付款笔数（待收款且已过到期日） */
+export function countOverduePayments(): number {
+  return (get<{ n: number }>("SELECT COUNT(*) AS n FROM payments WHERE status='待收款' AND due_date IS NOT NULL AND due_date < ?", new Date().toISOString())!).n;
+}
+
+/* ---------- 保修（OCA 式：起保日 + 保修月数 → 自动算终保日） ---------- */
+
+export const getWarranties = (siteId: string) =>
+  all<Warranty>("SELECT * FROM warranties WHERE site_id=? ORDER BY end_date", siteId);
+
+export function createWarranty(siteId: string, item: string, months: number, note: string | null) {
+  const start = new Date();
+  db.prepare("INSERT INTO warranties (id, site_id, item, start_date, months, end_date, note) VALUES (?,?,?,?,?,?,?)").run(
+    randomUUID(), siteId, item, start.toISOString(), months,
+    new Date(start.getTime() + months * 30.44 * 86400000).toISOString(), note
+  );
+}
+
+/** 保修剩余天数（负数=已过期） */
+export const warrantyDaysLeft = (w: Warranty) =>
+  Math.ceil((new Date(w.end_date).getTime() - Date.now()) / 86400000);

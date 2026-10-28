@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSiteByCode, getSteps } from "@/lib/data";
+import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSiteByCode, getSteps, getWarranties, warrantyDaysLeft } from "@/lib/data";
 import { confirmAcceptAction, decideChangeAction, sendOwnerMessageAction } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
@@ -15,6 +15,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
   const changes = getChanges(site.id);
   const payments = getPayments(site.id);
   const materials = getMaterials(site.id);
+  const warranties = getWarranties(site.id);
   const messages = getMessages(site.id);
 
   const stepDone = steps.filter((s) => s.status === "已完成").length;
@@ -282,6 +283,30 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
           <SubmitButton className="btn btn-primary shrink-0 px-4 py-2 text-sm" pending="…">发送</SubmitButton>
         </form>
       </div>
+
+      {/* 保修权益 */}
+      {warranties.length > 0 && (
+        <div className="card mb-5 p-5">
+          <div className="mb-1 text-sm font-semibold">🛡️ 保修权益</div>
+          <p className="mb-3 text-[11px] text-zinc-400">竣工验收后自动起保；保修期内出现质量问题，在留言板报修即可，公司按《住宅装饰装修保修单》约定响应。</p>
+          <div className="space-y-2">
+            {warranties.map((w) => {
+              const left = warrantyDaysLeft(w);
+              const expired = left < 0;
+              return (
+                <div key={w.id} className="flex items-center gap-2.5 rounded-xl bg-zinc-50 px-3.5 py-2.5">
+                  <span className="text-xs font-medium text-zinc-700">{w.item}</span>
+                  <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${
+                    expired ? "bg-zinc-100 text-zinc-400 ring-zinc-200" : left <= 90 ? "bg-amber-50 text-amber-600 ring-amber-200" : "bg-emerald-50 text-emerald-600 ring-emerald-200"
+                  }`}>
+                    {expired ? "已过保" : `保修余 ${left} 天`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 工地动态 */}
       <div className="card p-5">

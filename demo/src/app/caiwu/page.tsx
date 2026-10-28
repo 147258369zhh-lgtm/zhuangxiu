@@ -5,7 +5,7 @@ import { getRole } from "@/lib/role";
 import { createPaymentAction, receivePaymentAction } from "@/app/actions";
 import { BShell } from "@/components/BShell";
 import { SubmitButton } from "@/components/SubmitButton";
-import { Donut, Progress, StatusBadge, fmtMoney, fmtTime } from "@/components/ui";
+import { Donut, Progress, StatusBadge, DueBadge, fmtMoney, fmtTime } from "@/components/ui";
 
 export default async function CaiwuPage() {
   const role = await getRole();
@@ -18,12 +18,14 @@ export default async function CaiwuPage() {
   const receivedTotal = sites.reduce((s, x) => s + x.receivedAmount, 0);
   const pendingTotal = Math.max(0, contractTotal - receivedTotal);
   const pendingRows = rows.filter((r) => r.status === "待收款");
+  const now = Date.now();
+  const overdueRows = pendingRows.filter((r) => r.due_date && new Date(r.due_date).getTime() < now);
   const payPct = contractTotal > 0 ? Math.min(100, Math.round((receivedTotal / contractTotal) * 100)) : 0;
 
   const cards = [
     { icon: "📑", label: "在管合同（含增项）", value: `¥${fmtMoney(contractTotal)}`, hint: `${sites.length} 个工地` },
     { icon: "🏦", label: "已收款", value: `¥${fmtMoney(receivedTotal)}`, hint: `${rows.length - pendingRows.length} 笔已到账` },
-    { icon: "⏳", label: "待收款", value: `¥${fmtMoney(pendingTotal)}`, hint: `${pendingRows.length} 笔待回款`, warn: pendingRows.length > 0 },
+    { icon: "⏳", label: "待收款", value: `¥${fmtMoney(pendingTotal)}`, hint: `${pendingRows.length} 笔待回款${overdueRows.length ? ` · ${overdueRows.length} 笔逾期` : ""}`, warn: overdueRows.length > 0 },
     { icon: "📈", label: "回款率", value: `${payPct}%`, hint: "已收 / 应收合计" },
   ];
 
@@ -55,7 +57,7 @@ export default async function CaiwuPage() {
           <section className="card p-5">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold">💳 付款节点（全部工地）</span>
-              <span className="text-[11px] text-zinc-400">待收款排在最前</span>
+              <span className="text-[11px] text-zinc-400">逾期优先 · 按到期日排序</span>
             </div>
             <div className="space-y-2">
               {rows.length === 0 && <p className="text-xs text-zinc-400">还没有付款节点。</p>}
@@ -67,6 +69,7 @@ export default async function CaiwuPage() {
                   <span className="text-xs text-zinc-600">{r.title}</span>
                   {r.note && <span className="hidden text-[11px] text-zinc-400 md:inline">{r.note}</span>}
                   <StatusBadge status={r.status} />
+                  <DueBadge due={r.due_date} status={r.status} />
                   <span className="ml-auto font-mono text-xs font-semibold text-zinc-700">¥{fmtMoney(r.amount)}</span>
                   {r.status === "已收款" ? (
                     <span className="w-[78px] text-right text-[11px] text-zinc-400">{fmtTime(r.paid_at)}</span>

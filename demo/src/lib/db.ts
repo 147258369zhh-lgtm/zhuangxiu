@@ -17,9 +17,14 @@ const db =
   new DatabaseSync(join(dataDir, "demo.db"), { allowBareNamedParameters: false });
 globalThis.__zxDemoDb = db;
 
-// WAL + busy_timeout：dev 下多 worker 并发访问不再报 database is locked
-db.exec("PRAGMA journal_mode = WAL;");
-db.exec("PRAGMA busy_timeout = 3000;");
+// busy_timeout 必须先于 journal_mode 设置（否则首个 PRAGMA 无等待保护）；
+// WAL 已是持久属性，热启动时通常直接复用，锁竞争时静默重试一次
+db.exec("PRAGMA busy_timeout = 4000;");
+try {
+  db.exec("PRAGMA journal_mode = WAL;");
+} catch {
+  /* 已在 WAL 模式或竞争窗口，忽略 */
+}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS sites (
@@ -105,6 +110,15 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS warranties (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  item TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  months INTEGER NOT NULL,
+  end_date TEXT NOT NULL,
+  note TEXT
+);
 `);
 
 // 旧库平滑升级：缺列自动补（dev 迭代友好）
@@ -117,6 +131,7 @@ function ensureColumn(table: string, col: string, ddl: string) {
 ensureColumn("steps", "planned_days", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("steps", "started_at", "TEXT");
 ensureColumn("steps", "finished_at", "TEXT");
+ensureColumn("payments", "due_date", "TEXT");
 
 function genCode(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
@@ -266,6 +281,39 @@ if (msgCnt.n === 0) {
   if (m2) {
     insMsg.run(randomUUID(), m2.id, "业主", "李先生", "水电定位能不能在主卧电视墙再加一个网口？", new Date(mNow - 0.5 * 86400000).toISOString());
     insMsg.run(randomUUID(), m2.id, "工长", "赵工长", "可以的，明天师傅到场加一个，不额外收费。", new Date(mNow - 0.4 * 86400000).toISOString());
+  }
+}
+
+// 付款到期日 backfill（独立判断：老库的付款节点全部缺 due_date 时按规则补齐）
+// 规则：首期款=签约当天、中期款=created+21天、尾款=created+60天
+(() => {
+  const allN = db.prepare("SELECT COUNT(*) AS n FROM payments").get() as { n: number };
+  const nullN = db.prepare("SELECT COUNT(*) AS n FROM payments WHERE due_date IS NULL").get() as { n: number };
+  if (allN.n > 0 && nullN.n === allN.n) {
+    const rows = db.prepare("SELECT id, title, created_at FROM payments").all() as { id: string; title: string; created_at: string }[];
+    const upd = db.prepare("UPDATE payments SET due_date=? WHERE id=?");
+    for (const r of rows) {
+      const base = new Date(r.created_at).getTime();
+      const dueDays = r.title.includes("首期款") ? 0 : r.title.includes("中期款") ? 21 : 60;
+      upd.run(new Date(base + dueDays * 86400000).toISOString(), r.id);
+    }
+  }
+})();
+
+// 保修种子（独立判断，老库也能自动补齐）：王姐家防水/水电已验收 → 起保
+const wCnt = db.prepare("SELECT COUNT(*) AS n FROM warranties").get() as { n: number };
+if (wCnt.n === 0) {
+  const ax = db.prepare("SELECT id FROM sites WHERE code='AX7K2M'").get() as { id: string } | undefined;
+  if (ax) {
+    const insW = db.prepare("INSERT INTO warranties (id, site_id, item, start_date, months, end_date, note) VALUES (?,?,?,?,?,?,?)");
+    const now = Date.now();
+    const mk = (item: string, startDaysAgo: number, months: number, note: string) => {
+      const start = new Date(now - startDaysAgo * 86400000);
+      insW.run(randomUUID(), ax.id, item, start.toISOString(), months,
+        new Date(start.getTime() + months * 30.44 * 86400000).toISOString(), note);
+    };
+    mk("水电隐蔽工程", 7, 24, "打压 0.8MPa 一次通过");
+    mk("卫生间防水工程", 6, 60, "闭水试验 48h 无渗漏");
   }
 }
 

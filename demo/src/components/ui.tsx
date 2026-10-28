@@ -14,6 +14,29 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/** 付款到期徽章（rennotar/renovation-ui 式红黄绿预警）：逾期红 / 3天内黄 / 常规绿 */
+export function DueBadge({ due, status }: { due: string | null; status: string }) {
+  if (!due || status !== "待收款") return null;
+  const days = Math.ceil((new Date(due).getTime() - Date.now()) / 86400000);
+  if (days < 0)
+    return (
+      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-inset ring-red-200">
+        逾期 {Math.abs(days)} 天
+      </span>
+    );
+  if (days <= 3)
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-inset ring-amber-200">
+        {days === 0 ? "今天到期" : `剩 ${days} 天`}
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 ring-1 ring-inset ring-emerald-200">
+      {fmtDate(due)} 到期
+    </span>
+  );
+}
+
 export function Progress({ value, tone = "indigo" }: { value: number; tone?: "indigo" | "amber" | "red" | "emerald" }) {
   const bar =
     tone === "red"

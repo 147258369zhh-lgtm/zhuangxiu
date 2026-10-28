@@ -2,7 +2,8 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSite, getSteps } from "@/lib/data";
+import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSite, getSteps, getWarranties, warrantyDaysLeft } from "@/lib/data";
+import { CHANGE_PITFALLS } from "@/lib/checklists";
 import {
   addLogAction,
   advanceStepAction,
@@ -11,6 +12,7 @@ import {
   createChangeAction,
   createMaterialAction,
   createPaymentAction,
+  createWarrantyAction,
   receivePaymentAction,
   sendStaffMessageAction,
   updateSiteAction,
@@ -20,7 +22,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
 import { BShell } from "@/components/BShell";
 import { getRole } from "@/lib/role";
-import { Donut, Progress, StatusBadge, daysBetween, fmtDate, fmtMoney, fmtTime } from "@/components/ui";
+import { Donut, Progress, StatusBadge, DueBadge, daysBetween, fmtDate, fmtMoney, fmtTime } from "@/components/ui";
 
 export default async function GongdiPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,6 +36,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
   const payments = getPayments(site.id);
   const materials = getMaterials(site.id);
   const messages = getMessages(site.id);
+  const warranties = getWarranties(site.id);
 
   const host = (await headers()).get("host") ?? "localhost:3300";
   const inviteUrl = `http://${host}/c/${site.code}`;
@@ -283,6 +286,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                     <span className="text-xs font-medium text-zinc-700">{p.title}</span>
                     {p.note && <span className="hidden text-[11px] text-zinc-400 md:inline">{p.note}</span>}
                     <StatusBadge status={p.status} />
+                    <DueBadge due={p.due_date} status={p.status} />
                     <span className="ml-auto font-mono text-xs font-semibold text-zinc-700">¥{fmtMoney(p.amount)}</span>
                     {p.status === "已收款" ? (
                       <span className="w-[78px] text-right text-[11px] text-zinc-400">{fmtTime(p.paid_at)}</span>
@@ -348,6 +352,12 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                   </div>
                 </div>
                 <SubmitButton className="btn btn-primary mt-3" pending="创建中…">创建增项单（推送业主端）</SubmitButton>
+                <div className="mt-3 rounded-xl bg-amber-50/70 px-3.5 py-2.5">
+                  <div className="text-[11px] font-semibold text-amber-700">⚠️ 常见易漏项参考（对照后再报价）</div>
+                  <p className="mt-1 text-[10px] leading-relaxed text-amber-600/90">
+                    {CHANGE_PITFALLS.join(" · ")}
+                  </p>
+                </div>
               </form>
             </section>
             )}
@@ -529,6 +539,41 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                     : "推进工序、登记材料进场、发布带图日志、回复业主留言；财务收款由老板统一管理。"}
                 </p>
                 <Link href="/zhijian" className="btn btn-ghost mt-3 w-full text-xs">✅ 进入质检验收 →</Link>
+              </section>
+            )}
+
+            {role === "boss" && (
+              <section className="card p-5">
+                <div className="mb-3 text-sm font-semibold">🛡️ 保修台账</div>
+                <div className="space-y-2">
+                  {warranties.length === 0 && <p className="text-xs text-zinc-400">暂无保修记录（竣工验收后登记）。</p>}
+                  {warranties.map((w) => {
+                    const left = warrantyDaysLeft(w);
+                    const expired = left < 0;
+                    return (
+                      <div key={w.id} className="rounded-xl border border-zinc-100 px-3.5 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-zinc-700">{w.item}</span>
+                          <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${
+                            expired ? "bg-zinc-100 text-zinc-400 ring-zinc-200" : left <= 90 ? "bg-amber-50 text-amber-600 ring-amber-200" : "bg-emerald-50 text-emerald-600 ring-emerald-200"
+                          }`}>
+                            {expired ? "已过保" : `余 ${left} 天`}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-zinc-400">
+                          {fmtDate(w.start_date)} 起保 · {w.months} 个月 · {fmtDate(w.end_date)} 到期
+                          {w.note && <span> · {w.note}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <form action={createWarrantyAction} className="mt-3 flex gap-1.5 border-t border-zinc-100 pt-3">
+                  <input type="hidden" name="siteId" value={site.id} />
+                  <input name="item" className="input min-w-0 flex-1 px-2.5 py-1.5 text-[11px]" placeholder="工程名，如：厨房防水" />
+                  <input name="months" type="number" defaultValue={24} className="input w-16 shrink-0 px-2 py-1.5 text-right font-mono text-[11px]" title="保修月数" />
+                  <SubmitButton className="btn btn-ghost shrink-0 px-2.5 py-1.5 text-[11px]" pending="…">登记</SubmitButton>
+                </form>
               </section>
             )}
 

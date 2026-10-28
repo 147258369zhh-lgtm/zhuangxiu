@@ -13,6 +13,7 @@ import {
   createMaterial,
   createPayment,
   createSite,
+  createWarranty,
   decideChange,
   getSite,
   getSiteByCode,
@@ -41,6 +42,7 @@ export async function createSiteAction(fd: FormData) {
     layout: String(fd.get("layout") || ""),
     foreman: String(fd.get("foreman") || ""),
     budget: Number(fd.get("budget") || 0),
+    template: String(fd.get("template") || "全屋翻新"),
   });
   revalidatePath("/");
   redirect(`/gongdi/${siteId}`);
@@ -127,6 +129,17 @@ export async function createPaymentAction(fd: FormData) {
   const title = String(fd.get("title") || "").trim();
   if (!siteId || !title) return;
   createPayment(siteId, title, Number(fd.get("amount") || 0), String(fd.get("note") || "").trim());
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+/* ---------- 保修 ---------- */
+
+export async function createWarrantyAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const item = String(fd.get("item") || "").trim();
+  if (!siteId || !item) return;
+  createWarranty(siteId, item, Number(fd.get("months") || 12), String(fd.get("note") || "").trim() || null);
   const site = getSite(siteId);
   refresh(siteId, site?.code);
 }

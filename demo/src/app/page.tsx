@@ -5,7 +5,7 @@ import { SITE_TEMPLATES } from "@/lib/checklists";
 import { createSiteAction } from "./actions";
 import { BShell } from "@/components/BShell";
 import { SubmitButton } from "@/components/SubmitButton";
-import { Progress, StatusBadge, fmtMoney, fmtTime } from "@/components/ui";
+import { Donut, Progress, fmtMoney, fmtTime } from "@/components/ui";
 
 const FILTERS = [
   { key: "all", label: "全部" },
@@ -189,12 +189,20 @@ export default async function HomePage({
                       </div>
                       <div className="mt-0.5 text-xs text-zinc-500">{site.community} · {site.layout}</div>
                     </div>
-                    <StatusBadge status={done === total ? "已完成" : done > 0 ? "进行中" : "待开工"} />
+                    {/* 迷你进度环：色随状态，中心为百分比 */}
+                    <div className="relative shrink-0">
+                      <Donut pct={pct} size={48} stroke={6} tone={done === total ? "emerald" : done > 0 ? "indigo" : "amber"} />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-[11px] font-bold tabular-nums text-zinc-700">{Math.round(pct)}%</span>
+                      </div>
+                    </div>
                   </div>
                   <div className="mt-4">
-                    <Progress value={pct} />
+                    <Progress value={pct} thin />
                     <div className="mt-1.5 flex items-center justify-between text-[11px] text-zinc-400">
-                      <span>工序 {done}/{total}</span>
+                      <span className={done === total ? "font-semibold text-emerald-600" : done > 0 ? "font-medium text-indigo-600" : ""}>
+                        {done === total ? "已竣工" : done > 0 ? "施工中" : "筹备中"} · 工序 {done}/{total}
+                      </span>
                       <span className="font-semibold text-zinc-600">{Math.round(pct)}%</span>
                     </div>
                   </div>

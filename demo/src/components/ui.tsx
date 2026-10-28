@@ -51,3 +51,39 @@ export function daysBetween(iso: string | null, toIso?: string | null): number {
   const end = toIso ? new Date(toIso).getTime() : Date.now();
   return Math.max(0, Math.floor((end - new Date(iso).getTime()) / 86400000));
 }
+
+/** MM-DD 短日期 */
+export function fmtDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/** 环形进度（纯 SVG，无依赖） */
+export function Donut({
+  pct,
+  size = 128,
+  stroke = 14,
+  tone = "emerald",
+}: {
+  pct: number;
+  size?: number;
+  stroke?: number;
+  tone?: "emerald" | "amber" | "indigo";
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const filled = Math.max(0, Math.min(1, pct / 100)) * c;
+  const color = tone === "amber" ? "stroke-amber-500" : tone === "indigo" ? "stroke-indigo-600" : "stroke-emerald-500";
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-zinc-100" />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        strokeWidth={stroke} strokeLinecap="round"
+        strokeDasharray={`${filled} ${c - filled}`}
+        className={`${color} transition-all duration-500`}
+      />
+    </svg>
+  );
+}

@@ -15,7 +15,7 @@ import {
 } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
-import { Progress, StatusBadge, daysBetween, fmtMoney, fmtTime } from "@/components/ui";
+import { Donut, Progress, StatusBadge, daysBetween, fmtDate, fmtMoney, fmtTime } from "@/components/ui";
 
 export default async function GongdiPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -41,6 +41,35 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
   const confirmedSum = changes.filter((c) => c.status === "已确认").reduce((s, c) => s + c.amount, 0);
   const receivedSum = payments.filter((p) => p.status === "已收款").reduce((s, p) => s + p.amount, 0);
   const matDone = materials.filter((m) => m.status === "已进场").length;
+  const totalDue = site.budget + confirmedSum;
+  const payPct = totalDue > 0 ? Math.min(100, Math.round((receivedSum / totalDue) * 100)) : 0;
+
+  // 甘特图排程：以最早开工日为锚点，未开工工序自动顺排
+  const DAY = 86400000;
+  const anchorIso =
+    steps.map((s) => s.started_at).filter((x): x is string => !!x).sort()[0] ?? site.created_at;
+  const anchorMs = new Date(anchorIso).getTime();
+  const nowDay = Math.max(0, (Date.now() - anchorMs) / DAY);
+  let prevEnd = 0;
+  const ganttRows = steps.map((st) => {
+    const planned = st.planned_days || 1;
+    let start: number;
+    let used = 0;
+    if (st.started_at) {
+      start = Math.max(0, (new Date(st.started_at).getTime() - anchorMs) / DAY);
+      used =
+        st.status === "已完成"
+          ? Math.max(1, daysBetween(st.started_at, st.finished_at))
+          : daysBetween(st.started_at);
+    } else {
+      start = Math.max(nowDay, prevEnd);
+    }
+    const end = st.started_at ? Math.max(start + planned, start + used) : start + planned;
+    prevEnd = end;
+    return { id: st.id, name: st.name, status: st.status, start, planned, used, end };
+  });
+  const totalDays = Math.max(nowDay + 1, ...ganttRows.map((r) => r.end), 7);
+  const todayRatio = Math.min(1, Math.max(0, nowDay / totalDays));
 
   return (
     <div>
@@ -72,6 +101,62 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
             <span>邀请码 <b className="font-mono text-indigo-600">{site.code}</b></span>
           </div>
         </div>
+
+        {/* 工期甘特图（全宽） */}
+        <section className="card mb-6 p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-semibold">📅 工期甘特图</span>
+            <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-400">
+              <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-emerald-400" />已完成</span>
+              <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-amber-400" />进行中</span>
+              <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-zinc-300" />未开始</span>
+              <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-red-300" />超出计划</span>
+              <span className="flex items-center gap-1"><i className="h-3 w-0 border-l-2 border-dashed border-indigo-400" />今天</span>
+            </div>
+          </div>
+          <div className="relative">
+            <div
+              className="pointer-events-none absolute bottom-1 top-1 z-10 border-l-2 border-dashed border-indigo-400"
+              style={{ left: `calc(64px + (100% - 116px) * ${todayRatio})` }}
+            />
+            <div className="space-y-1.5">
+              {ganttRows.map((row) => {
+                const perDay = 100 / totalDays;
+                const seg = (left: number, width: number, cls: string, k: string) =>
+                  width <= 0 ? null : (
+                    <div
+                      key={k}
+                      className={`absolute inset-y-0.5 rounded-[3px] ${cls}`}
+                      style={{ left: `${left * perDay}%`, width: `${Math.max(width * perDay, 0.8)}%` }}
+                    />
+                  );
+                return (
+                  <div key={row.id} className="flex items-center gap-2">
+                    <span className={`w-14 shrink-0 truncate text-[11px] ${row.status === "待开工" ? "text-zinc-400" : "font-medium text-zinc-600"}`}>
+                      {row.name}
+                    </span>
+                    <div className="relative h-5 flex-1 overflow-hidden rounded-md bg-zinc-50 ring-1 ring-zinc-100">
+                      {row.status === "待开工" && seg(row.start, row.planned, "bg-zinc-200", "p")}
+                      {row.status !== "待开工" && (
+                        <>
+                          {seg(row.start, row.planned, row.status === "已完成" ? "bg-emerald-100" : "bg-amber-100", "plan")}
+                          {seg(row.start, Math.min(row.used, row.planned), row.status === "已完成" ? "bg-emerald-400" : "bg-amber-400", "used")}
+                          {row.used > row.planned && seg(row.start + row.planned, row.used - row.planned, "bg-red-300", "over")}
+                        </>
+                      )}
+                    </div>
+                    <span className="w-11 shrink-0 text-right text-[10px] tabular-nums text-zinc-400">
+                      {row.status === "已完成" ? `${row.used}天` : row.status === "进行中" ? `${row.used}/${row.planned}天` : `${row.planned}天`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-zinc-400">
+            自 {fmtDate(anchorIso)} 开工排起；未开工工序按计划工期自动顺排，实际进度越出计划的部分显示为红色。
+          </p>
+        </section>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
           <div className="space-y-6">
@@ -321,6 +406,40 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
               <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
                 业主微信扫码打开：看进度/预算/付款/材料，按清单验收打卡，增项线上签字。
               </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Link href={`/gongdi/${site.id}/baogao`} className="btn btn-ghost text-xs">🖨 工地报告</Link>
+                <Link href={`/c/${site.code}`} target="_blank" className="btn btn-ghost text-xs">📱 预览业主端</Link>
+              </div>
+            </section>
+
+            <section className="card p-5">
+              <div className="mb-3 text-sm font-semibold">💵 收款概览</div>
+              <div className="flex items-center gap-4">
+                <div className="relative shrink-0">
+                  <Donut pct={payPct} />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-lg font-bold tabular-nums">{payPct}%</span>
+                    <span className="text-[10px] text-zinc-400">收款进度</span>
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">应付合计</span>
+                    <b className="tabular-nums">¥{fmtMoney(totalDue)}</b>
+                  </div>
+                  <div className="text-[10px] leading-relaxed text-zinc-400">
+                    合同 ¥{fmtMoney(site.budget)}{confirmedSum > 0 ? ` + 已确认增项 ¥${fmtMoney(confirmedSum)}` : ""}
+                  </div>
+                  <div className="flex justify-between border-t border-zinc-100 pt-1.5">
+                    <span className="text-emerald-600">已收款</span>
+                    <b className="tabular-nums text-emerald-600">¥{fmtMoney(receivedSum)}</b>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-amber-600">待收款</span>
+                    <b className="tabular-nums text-amber-600">¥{fmtMoney(Math.max(0, totalDue - receivedSum))}</b>
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section className="card p-5">

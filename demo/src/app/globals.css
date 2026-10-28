@@ -32,3 +32,21 @@ body {
   }
 }
 
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .card {
+    break-inside: avoid;
+    border-color: #e4e4e7 !important;
+    box-shadow: none !important;
+  }
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+}
+

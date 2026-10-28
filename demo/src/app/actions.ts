@@ -25,6 +25,8 @@ import {
 
 function refresh(siteId: string, code?: string) {
   revalidatePath("/");
+  revalidatePath("/caiwu");
+  revalidatePath("/zhijian");
   revalidatePath(`/gongdi/${siteId}`);
   if (code) revalidatePath(`/c/${code}`);
 }

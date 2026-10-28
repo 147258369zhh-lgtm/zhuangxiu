@@ -18,12 +18,15 @@ import {
 } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
+import { BShell } from "@/components/BShell";
+import { getRole } from "@/lib/role";
 import { Donut, Progress, StatusBadge, daysBetween, fmtDate, fmtMoney, fmtTime } from "@/components/ui";
 
 export default async function GongdiPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const site = getSite(id);
   if (!site) notFound();
+  const role = await getRole();
   const steps = getSteps(site.id);
   const logs = getLogs(site.id);
   const accepts = getAccepts(site.id);
@@ -76,14 +79,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
   const todayRatio = Math.min(1, Math.max(0, nowDay / totalDays));
 
   return (
-    <div>
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <Link href="/" className="text-sm text-zinc-500 transition hover:text-zinc-900">← 返回总览</Link>
-          <div className="text-sm text-zinc-500">B端 · 工地详情</div>
-        </div>
-      </header>
-
+    <BShell active="/">
       <main className="mx-auto max-w-6xl px-6 py-8">
         <div className="card mb-6 flex flex-wrap items-center justify-between gap-x-8 gap-y-3 px-6 py-5">
           <div>
@@ -100,10 +96,17 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-500">
             <span>业主 <b className="text-zinc-800">{site.owner_name}</b></span>
             <span>工长 <b className="text-zinc-800">{site.foreman}</b></span>
-            <span>合同额 <b className="text-zinc-800">¥{fmtMoney(site.budget)}</b></span>
-            <span>已收 <b className="text-emerald-600">¥{fmtMoney(receivedSum)}</b></span>
-            <span>邀请码 <b className="font-mono text-indigo-600">{site.code}</b></span>
+            {role === "boss" ? (
+              <>
+                <span>合同额 <b className="text-zinc-800">¥{fmtMoney(site.budget)}</b></span>
+                <span>已收 <b className="text-emerald-600">¥{fmtMoney(receivedSum)}</b></span>
+                <span>邀请码 <b className="font-mono text-indigo-600">{site.code}</b></span>
+              </>
+            ) : (
+              <span className="text-zinc-300">· 财务信息仅老板可见 ·</span>
+            )}
           </div>
+          {role === "boss" && (
           <details className="no-print mt-2 w-full">
             <summary className="cursor-pointer text-[11px] font-medium text-indigo-600 hover:text-indigo-500">✏️ 编辑工地信息</summary>
             <form action={updateSiteAction} className="mt-3 grid gap-3 md:grid-cols-3">
@@ -137,6 +140,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
               </div>
             </form>
           </details>
+          )}
         </div>
 
         {/* 工期甘特图（全宽） */}
@@ -262,7 +266,8 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
               </div>
             </section>
 
-            {/* 付款管理 */}
+            {/* 付款管理（仅老板） */}
+            {role === "boss" && (
             <section className="card p-5">
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-semibold">💰 付款管理</span>
@@ -298,8 +303,10 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                 <SubmitButton className="btn btn-ghost px-3 py-1.5 text-xs" pending="…">添加节点</SubmitButton>
               </form>
             </section>
+            )}
 
-            {/* 增项管理 */}
+            {/* 增项管理（仅老板） */}
+            {role === "boss" && (
             <section className="card p-5">
               <div className="mb-4 flex items-center justify-between">
                 <span className="text-sm font-semibold">📋 增项管理</span>
@@ -343,6 +350,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                 <SubmitButton className="btn btn-primary mt-3" pending="创建中…">创建增项单（推送业主端）</SubmitButton>
               </form>
             </section>
+            )}
 
             {/* 材料进场 */}
             <section className="card p-5">
@@ -441,7 +449,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">署名</label>
-                    <select name="author" className="input">
+                    <select name="author" className="input" defaultValue={role === "supervisor" ? "张监理" : role === "foreman" ? "李工长" : undefined}>
                       {["李工长", "赵工长", "张监理", "项目经理"].map((a) => <option key={a}>{a}</option>)}
                     </select>
                   </div>
@@ -480,6 +488,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
               </div>
             </section>
 
+            {role === "boss" ? (
             <section className="card p-5">
               <div className="mb-3 text-sm font-semibold">💵 收款概览</div>
               <div className="flex items-center gap-4">
@@ -509,6 +518,19 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
                 </div>
               </div>
             </section>
+            ) : (
+              <section className="card p-5">
+                <div className="mb-2 text-sm font-semibold">
+                  {role === "supervisor" ? "🔍 监理提示" : "🧰 工长提示"}
+                </div>
+                <p className="text-xs leading-relaxed text-zinc-500">
+                  {role === "supervisor"
+                    ? "维护下方验收清单、发布质检日志；发现问题时在留言板同步业主。财务收款由老板管理。"
+                    : "推进工序、登记材料进场、发布带图日志、回复业主留言；财务收款由老板统一管理。"}
+                </p>
+                <Link href="/zhijian" className="btn btn-ghost mt-3 w-full text-xs">✅ 进入质检验收 →</Link>
+              </section>
+            )}
 
             <section className="card p-5">
               <div className="mb-3 flex items-center justify-between">
@@ -544,6 +566,6 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
           </aside>
         </div>
       </main>
-    </div>
+    </BShell>
   );
 }

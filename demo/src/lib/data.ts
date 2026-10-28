@@ -225,3 +225,51 @@ export function recentEvents(limit = 6): RecentEvent[] {
     limit
   );
 }
+
+/* ---------- 跨工地（财务/质检工作台） ---------- */
+
+export type PaymentRow = Payment & { site_name: string; code: string };
+
+/** 全部工地的付款节点：待收款在前 */
+export function listAllPayments(): PaymentRow[] {
+  return all<PaymentRow>(
+    `SELECT p.*, s.name AS site_name, s.code
+       FROM payments p JOIN sites s ON s.id = p.site_id
+      ORDER BY CASE p.status WHEN '待收款' THEN 0 ELSE 1 END, s.name, p.rowid`
+  );
+}
+
+export type AcceptRow = {
+  id: string; site_id: string; step_name: string; item: string; done: number;
+  checked_by: string | null; checked_at: string | null; comment: string | null; photo: string | null;
+  site_name: string; code: string;
+};
+
+/** 待验收项（监理待办） */
+export function listPendingAccepts(): AcceptRow[] {
+  return all<AcceptRow>(
+    `SELECT a.*, s.name AS site_name, s.code
+       FROM accepts a JOIN sites s ON s.id = a.site_id
+      WHERE a.done = 0
+      ORDER BY s.name, a.rowid`
+  );
+}
+
+/** 最近验收记录 */
+export function listRecentAccepts(limit = 8): AcceptRow[] {
+  return all<AcceptRow>(
+    `SELECT a.*, s.name AS site_name, s.code
+       FROM accepts a JOIN sites s ON s.id = a.site_id
+      WHERE a.done = 1
+      ORDER BY a.checked_at DESC LIMIT ?`,
+    limit
+  );
+}
+
+export function countPendingAccepts(): number {
+  return (get<{ n: number }>("SELECT COUNT(*) AS n FROM accepts WHERE done=0")!).n;
+}
+
+export function countPendingPayments(): number {
+  return (get<{ n: number }>("SELECT COUNT(*) AS n FROM payments WHERE status='待收款'")!).n;
+}

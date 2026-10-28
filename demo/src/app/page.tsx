@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { listSitesWithProgress, recentEvents } from "@/lib/data";
+import { listSitesWithProgress, recentEvents, getSteps, getAccepts } from "@/lib/data";
+import { getRole } from "@/lib/role";
 import { createSiteAction } from "./actions";
+import { BShell } from "@/components/BShell";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Progress, StatusBadge, fmtMoney, fmtTime } from "@/components/ui";
 
@@ -17,46 +19,79 @@ export default async function HomePage({
   searchParams: Promise<{ f?: string }>;
 }) {
   const { f = "all" } = await searchParams;
-  const list = listSitesWithProgress();
+  const role = await getRole();
+  const list0 = listSitesWithProgress();
+  const list = role === "foreman" ? list0.filter((x) => x.site.foreman === "李工长") : list0;
   const withStatus = list.map((x) => ({
     ...x,
     st: x.done === x.total ? "已竣工" : x.done > 0 ? "进行中" : "待开工",
   }));
-  const filtered = f === "active" ? withStatus.filter((x) => x.st === "进行中") : f === "todo" ? withStatus.filter((x) => x.st === "待开工") : f === "done" ? withStatus.filter((x) => x.st === "已竣工") : withStatus;
+  const filtered =
+    f === "active" ? withStatus.filter((x) => x.st === "进行中")
+    : f === "todo" ? withStatus.filter((x) => x.st === "待开工")
+    : f === "done" ? withStatus.filter((x) => x.st === "已竣工")
+    : withStatus;
 
   const active = withStatus.filter((x) => x.st === "进行中").length;
   const budgetSum = list.reduce((s, { site }) => s + (site.budget || 0), 0);
   const extraSum = list.reduce((s, x) => s + x.extraAmount, 0);
   const receivedSum = list.reduce((s, x) => s + x.receivedAmount, 0);
   const pendingTotal = list.reduce((s, x) => s + x.pendingChanges, 0);
-  const events = recentEvents(6);
+
+  // 工长/监理视角的施工侧统计
+  let activeSteps = 0;
+  let pendingAccs = 0;
+  for (const { site } of list) {
+    activeSteps += getSteps(site.id).filter((s) => s.status === "进行中").length;
+    pendingAccs += getAccepts(site.id).filter((a) => !a.done).length;
+  }
+  // 工长视角：动态流只保留自己工地的事件（不泄露其他工地的经营信息）
+  const myCodes = new Set(list.map((x) => x.site.code));
+  const events =
+    role === "foreman"
+      ? recentEvents(12).filter((e) => myCodes.has(e.code)).slice(0, 6)
+      : recentEvents(6);
+
+  const cards =
+    role === "boss"
+      ? [
+          { icon: "🏗️", label: "在建工地", value: `${list.length}`, hint: `进行中 ${active}` },
+          { icon: "💰", label: "在管合同", value: `¥${fmtMoney(budgetSum)}`, hint: `已确认增项 +¥${fmtMoney(extraSum)}` },
+          { icon: "🏦", label: "已收款项", value: `¥${fmtMoney(receivedSum)}`, hint: "全部工地合计" },
+          { icon: "📋", label: "待业主处理", value: `${pendingTotal}`, hint: "增项确认单", warn: pendingTotal > 0 },
+        ]
+      : role === "foreman"
+        ? [
+            { icon: "🏗️", label: "我的工地", value: `${list.length}`, hint: "工长=李工长" },
+            { icon: "🧱", label: "进行中工序", value: `${activeSteps}`, hint: "推进后业主实时可见" },
+            { icon: "✅", label: "待业主验收", value: `${pendingAccs}`, hint: "业主端打卡清单" },
+            { icon: "💬", label: "业主留言", value: "留言板", hint: "工地详情内回复" },
+          ]
+        : [
+            { icon: "🏗️", label: "在建工地", value: `${list.length}`, hint: `进行中 ${active}` },
+            { icon: "🧱", label: "进行中工序", value: `${activeSteps}`, hint: "需巡回检查" },
+            { icon: "✅", label: "待验收项", value: `${pendingAccs}`, hint: "催业主打卡" },
+            { icon: "📝", label: "质检日志", value: "工地日志", hint: "详情内发布" },
+          ];
+
+  const pageTitle = role === "foreman" ? "我的工地" : role === "supervisor" ? "在建工地 · 质检总览" : "工地总览";
+  const pageDesc =
+    role === "boss"
+      ? "装修公司从这里创建工地、跟进工序与增项；业主扫码即看进度、线上签字。"
+      : role === "foreman"
+        ? "只看到自己负责的工地；推进工序、发日志、回复业主留言，业主端实时同步。"
+        : "监理视角：关注验收清单完成情况与质检记录，可维护验收项、发布质检日志。";
 
   return (
-    <div>
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-base shadow-sm shadow-indigo-200">🏠</div>
-            <div className="text-[15px] font-semibold">装修管理平台</div>
-            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold tracking-widest text-indigo-500 ring-1 ring-indigo-100">DEMO</span>
-          </div>
-          <div className="text-sm text-zinc-500">演示装饰公司 · <span className="font-medium text-zinc-700">B端</span></div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-6 py-8">
+    <BShell active="/">
+      <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold">工地总览</h1>
-          <p className="mt-1 text-sm text-zinc-500">装修公司从这里创建工地、跟进工序与增项；业主扫码即看进度、线上签字。</p>
+          <h1 className="text-xl font-semibold">{pageTitle}</h1>
+          <p className="mt-1 text-sm text-zinc-500">{pageDesc}</p>
         </div>
 
         <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-          {[
-            { icon: "🏗️", label: "在建工地", value: `${list.length}`, hint: `进行中 ${active}` },
-            { icon: "💰", label: "在管合同", value: `¥${fmtMoney(budgetSum)}`, hint: `已确认增项 +¥${fmtMoney(extraSum)}` },
-            { icon: "🏦", label: "已收款项", value: `¥${fmtMoney(receivedSum)}`, hint: "全部工地合计" },
-            { icon: "📋", label: "待业主处理", value: `${pendingTotal}`, hint: "增项确认单", warn: pendingTotal > 0 },
-          ].map((s) => (
+          {cards.map((s) => (
             <div key={s.label} className={`card px-5 py-4 ${s.warn ? "ring-2 ring-amber-200" : ""}`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-zinc-500">{s.label}</span>
@@ -68,14 +103,11 @@ export default async function HomePage({
           ))}
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        <div className={`grid gap-6 ${role === "boss" ? "lg:grid-cols-[1fr_360px]" : "lg:grid-cols-[1fr_320px]"}`}>
           <section className="space-y-4">
             <div className="flex flex-wrap gap-2">
               {FILTERS.map((flt) => {
-                const n =
-                  flt.key === "all"
-                    ? withStatus.length
-                    : withStatus.filter((x) => x.st === flt.label).length;
+                const n = flt.key === "all" ? withStatus.length : withStatus.filter((x) => x.st === flt.label).length;
                 const on = f === flt.key;
                 return (
                   <Link
@@ -96,7 +128,9 @@ export default async function HomePage({
               <div className="card flex flex-col items-center justify-center gap-1 px-6 py-14 text-center">
                 <span className="text-2xl">🈳</span>
                 <div className="text-sm font-medium text-zinc-500">该状态下暂无工地</div>
-                <div className="text-xs text-zinc-400">切回"全部"或创建一个新工地</div>
+                <div className="text-xs text-zinc-400">
+                  {role === "foreman" ? "新建工地时把「工长」写为 李工长，就会出现在你的视角里" : "切回「全部」或创建一个新工地"}
+                </div>
               </div>
             )}
 
@@ -130,7 +164,7 @@ export default async function HomePage({
                     <span>业主 <b className="font-medium text-zinc-700">{site.owner_name}</b></span>
                     <span>工长 <b className="font-medium text-zinc-700">{site.foreman}</b></span>
                     <span>¥{fmtMoney(site.budget)}{extraAmount > 0 && <span className="text-emerald-600"> +¥{fmtMoney(extraAmount)}</span>}</span>
-                    <span className="text-emerald-600">已收 {payPct}%</span>
+                    {role === "boss" && <span className="text-emerald-600">已收 {payPct}%</span>}
                     <span className="ml-auto text-zinc-400">{fmtTime(site.created_at)}</span>
                   </div>
                 </Link>
@@ -139,43 +173,64 @@ export default async function HomePage({
           </section>
 
           <aside className="space-y-4">
-            <form action={createSiteAction} className="card p-5">
-              <div className="mb-4 text-sm font-semibold">➕ 新建工地</div>
-              <div className="space-y-3">
-                <div>
-                  <label className="label">工地名称（楼栋号）</label>
-                  <input name="name" className="input" placeholder="如：5-1-201 陈先生的新家" required />
-                </div>
-                <div>
-                  <label className="label">小区</label>
-                  <input name="community" className="input" placeholder="如：翡翠湾" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
+            {role === "boss" && (
+              <form action={createSiteAction} className="card p-5">
+                <div className="mb-4 text-sm font-semibold">➕ 新建工地</div>
+                <div className="space-y-3">
                   <div>
-                    <label className="label">业主</label>
-                    <input name="owner" className="input" placeholder="王女士" />
+                    <label className="label">工地名称（楼栋号）</label>
+                    <input name="name" className="input" placeholder="如：5-1-201 陈先生的新家" required />
                   </div>
                   <div>
-                    <label className="label">户型</label>
-                    <input name="layout" className="input" placeholder="89㎡ 两居" />
+                    <label className="label">小区</label>
+                    <input name="community" className="input" placeholder="如：翡翠湾" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">业主</label>
+                      <input name="owner" className="input" placeholder="王女士" />
+                    </div>
+                    <div>
+                      <label className="label">户型</label>
+                      <input name="layout" className="input" placeholder="89㎡ 两居" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">工长</label>
+                      <input name="foreman" className="input" placeholder="李工长" />
+                    </div>
+                    <div>
+                      <label className="label">合同额（¥）</label>
+                      <input name="budget" type="number" className="input" placeholder="150000" />
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">工长</label>
-                    <input name="foreman" className="input" placeholder="李工长" />
-                  </div>
-                  <div>
-                    <label className="label">合同额（¥）</label>
-                    <input name="budget" type="number" className="input" placeholder="150000" />
-                  </div>
-                </div>
+                <SubmitButton className="btn btn-primary mt-4 w-full" pending="创建中…">创建工地</SubmitButton>
+                <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">
+                  创建后自动生成六道标准工序（含工期）、付款计划与业主邀请二维码；验收项请在工地详情按工序添加。
+                </p>
+              </form>
+            )}
+
+            {role === "foreman" && (
+              <div className="card p-5">
+                <div className="mb-2 text-sm font-semibold">🧰 工长工作台</div>
+                <p className="text-xs leading-relaxed text-zinc-500">
+                  进入工地后可以：推进工序状态、登记材料进场、发布带图日志、回复业主留言。
+                  <br />
+                  财务收款由公司统一管理，此视角不展示。
+                </p>
               </div>
-              <SubmitButton className="btn btn-primary mt-4 w-full" pending="创建中…">创建工地</SubmitButton>
-              <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">
-                创建后自动生成六道标准工序（含工期）、付款计划与业主邀请二维码。
-              </p>
-            </form>
+            )}
+
+            {role === "supervisor" && (
+              <div className="card p-5">
+                <div className="mb-2 text-sm font-semibold">🔍 质检工作台</div>
+                <p className="text-xs leading-relaxed text-zinc-500">各工地待验收项与质检记录已汇总到「质检验收」页。</p>
+                <Link href="/zhijian" className="btn btn-primary mt-3 w-full text-xs">进入质检验收 →</Link>
+              </div>
+            )}
 
             <div className="card p-5">
               <div className="mb-2 text-sm font-semibold">📱 业主端（C端）</div>
@@ -194,13 +249,10 @@ export default async function HomePage({
                 {events.map((e, i) => {
                   const icon = e.type === "log" ? "📝" : e.type === "accept" ? "✅" : e.type === "pay" ? "💰" : "💬";
                   const text =
-                    e.type === "log"
-                      ? `${e.author} 发布日志`
-                      : e.type === "accept"
-                        ? `${e.author} 验收通过`
-                        : e.type === "pay"
-                          ? `收到款项`
-                          : `${e.author} 留言`;
+                    e.type === "log" ? `${e.author} 发布日志`
+                    : e.type === "accept" ? `${e.author} 验收通过`
+                    : e.type === "pay" ? `收到款项`
+                    : `${e.author} 留言`;
                   return (
                     <div key={i} className="flex items-start gap-2.5 rounded-lg bg-zinc-50 px-3 py-2">
                       <span className="mt-0.5 text-sm">{icon}</span>
@@ -218,7 +270,7 @@ export default async function HomePage({
             </div>
           </aside>
         </div>
-      </main>
-    </div>
+      </div>
+    </BShell>
   );
 }

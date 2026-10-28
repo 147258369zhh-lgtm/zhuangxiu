@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { getAccepts, getLogs, getSite, getSiteByCode, getSteps } from "@/lib/data";
-import { confirmAcceptAction } from "@/app/actions";
-import { Progress, fmtTime } from "@/components/ui";
+import { getAccepts, getChanges, getLogs, getSiteByCode, getSteps } from "@/lib/data";
+import { confirmAcceptAction, decideChangeAction } from "@/app/actions";
+import { Progress, StatusBadge, fmtMoney, fmtTime } from "@/components/ui";
 
 export default async function ClientPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -10,11 +10,16 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
   const steps = getSteps(site.id);
   const logs = getLogs(site.id);
   const accepts = getAccepts(site.id);
+  const changes = getChanges(site.id);
 
   const stepDone = steps.filter((s) => s.status === "已完成").length;
   const pct = steps.length ? (stepDone / steps.length) * 100 : 0;
   const current = steps.find((s) => s.status === "进行中");
   const accDone = accepts.filter((a) => a.done).length;
+  const pendingChanges = changes.filter((c) => c.status === "待确认");
+  const decidedChanges = changes.filter((c) => c.status !== "待确认");
+  const plannedSum = steps.reduce((s, st) => s + st.planned, 0);
+  const actualSum = steps.reduce((s, st) => s + st.actual, 0);
 
   const groups = [...new Set(accepts.map((a) => a.step_name))].map((name) => ({
     name,
@@ -32,6 +37,18 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
           <span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-zinc-200">演示装饰</span>
         </div>
       </div>
+
+      {(pendingChanges.length > 0 || accepts.some((a) => !a.done)) && (
+        <div className="mb-5 flex items-center gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
+          <span className="text-base">🔔</span>
+          <div className="text-xs leading-relaxed text-amber-800">
+            待你处理：
+            {pendingChanges.length > 0 && <a href="#changes" className="font-semibold underline underline-offset-2">{pendingChanges.length} 笔增项确认</a>}
+            {pendingChanges.length > 0 && accepts.some((a) => !a.done) && " · "}
+            {accepts.some((a) => !a.done) && <a href="#accept" className="font-semibold underline underline-offset-2">{accepts.filter((a) => !a.done).length} 项验收打卡</a>}
+          </div>
+        </div>
+      )}
 
       <div className="card mb-5 p-5">
         <div className="flex items-end justify-between">
@@ -58,6 +75,67 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
 
       <div className="card mb-5 p-5">
         <div className="mb-1 flex items-baseline justify-between">
+          <div className="text-sm font-semibold">💰 预算执行</div>
+          <div className="text-[11px] text-zinc-400">计划 ¥{fmtMoney(plannedSum)} · 实际 ¥{fmtMoney(actualSum)}</div>
+        </div>
+        <div className="mt-2 space-y-2.5">
+          {steps.filter((s) => s.planned > 0).map((st) => {
+            const ratio = st.planned > 0 ? (st.actual / st.planned) * 100 : 0;
+            const over = st.actual > st.planned;
+            return (
+              <div key={st.id}>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-zinc-500">{st.name}</span>
+                  <span className={over ? "font-semibold text-red-500" : "font-mono text-zinc-400"}>
+                    ¥{fmtMoney(st.actual)} / ¥{fmtMoney(st.planned)}{over ? " 超支" : ""}
+                  </span>
+                </div>
+                <div className="mt-1">
+                  <Progress value={ratio} tone={over ? "red" : "amber"} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {changes.length > 0 && (
+        <div id="changes" className="card mb-5 scroll-mt-4 p-5">
+          <div className="mb-1 text-sm font-semibold">📋 增项确认</div>
+          <p className="mb-3 text-[11px] text-zinc-400">任何加钱的项目都会先推送给你，确认后才执行——线上签字，避免扯皮。</p>
+          <div className="space-y-3">
+            {pendingChanges.map((c) => (
+              <form key={c.id} action={decideChangeAction} className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3.5">
+                <input type="hidden" name="changeId" value={c.id} />
+                <input type="hidden" name="code" value={site.code} />
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">{c.title}</span>
+                  <span className="font-mono text-base font-bold text-amber-600">+¥{fmtMoney(c.amount)}</span>
+                </div>
+                {c.reason && <div className="mt-1 text-[11px] text-zinc-500">{c.reason}</div>}
+                <input name="comment" className="input mt-2.5 px-2.5 py-1.5 text-xs" placeholder="备注（选填），如：同意，麻烦尽快" />
+                <div className="mt-2.5 flex gap-2">
+                  <button name="decision" value="已确认" className="btn btn-amber flex-1 py-1.5 text-xs">同意增项，签字</button>
+                  <button name="decision" value="已拒绝" className="btn btn-ghost flex-1 py-1.5 text-xs text-red-500">拒绝</button>
+                </div>
+              </form>
+            ))}
+            {decidedChanges.map((c) => (
+              <div key={c.id} className={`rounded-xl border px-4 py-3 ${c.status === "已确认" ? "border-emerald-100 bg-emerald-50/50" : "border-zinc-200 bg-zinc-50"}`}>
+                <div className="flex items-center gap-2.5">
+                  <span className={`text-sm ${c.status === "已拒绝" ? "text-zinc-400 line-through" : "text-zinc-700"}`}>{c.title}</span>
+                  <StatusBadge status={c.status} />
+                  <span className={`ml-auto font-mono text-sm ${c.status === "已拒绝" ? "text-zinc-300" : "text-zinc-700"}`}>+¥{fmtMoney(c.amount)}</span>
+                </div>
+                {c.decided_comment && <div className="mt-1 text-[11px] text-zinc-500">“{c.decided_comment}” — {c.decided_by} {fmtTime(c.decided_at)}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div id="accept" className="card mb-5 scroll-mt-4 p-5">
+        <div className="mb-1 flex items-baseline justify-between">
           <div className="text-sm font-semibold">📋 验收打卡</div>
           <div className="text-[11px] text-zinc-400">已确认 {accDone}/{accepts.length}</div>
         </div>
@@ -81,7 +159,7 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
                       {it.comment && <div className="mt-1 text-xs text-zinc-500">“{it.comment}”</div>}
                       {it.photo && (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={`/uploads/${it.photo}`} alt="验收照片" className="mt-2 h-36 w-full rounded-lg object-cover" />
+                        <img src={it.photo.startsWith("data:") ? it.photo : `/uploads/${it.photo}`} alt="验收照片" className="mt-2 h-36 w-full rounded-lg object-cover" />
                       )}
                     </div>
                   ) : (
@@ -107,13 +185,19 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
         <div className="mb-3 text-sm font-semibold">💬 工地动态</div>
         <div className="space-y-3">
           {logs.map((l) => (
-            <div key={l.id} className="rounded-xl bg-zinc-50 px-3.5 py-3">
-              <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-                <span className="rounded-md bg-white px-1.5 py-0.5 font-medium text-zinc-600 ring-1 ring-zinc-200">{l.author}</span>
-                {l.step_name && <span>{l.step_name}</span>}
-                <span className="ml-auto">{fmtTime(l.created_at)}</span>
+            <div key={l.id} className="overflow-hidden rounded-xl bg-zinc-50">
+              <div className="px-3.5 pt-3">
+                <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                  <span className="rounded-md bg-white px-1.5 py-0.5 font-medium text-zinc-600 ring-1 ring-zinc-200">{l.author}</span>
+                  {l.step_name && <span>{l.step_name}</span>}
+                  <span className="ml-auto">{fmtTime(l.created_at)}</span>
+                </div>
+                <p className="mt-1.5 text-sm leading-relaxed">{l.content}</p>
               </div>
-              <p className="mt-1.5 text-sm leading-relaxed">{l.content}</p>
+              {l.photo && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={l.photo.startsWith("data:") ? l.photo : `/uploads/${l.photo}`} alt="施工照片" className="mt-2.5 h-40 w-full object-cover" />
+              )}
             </div>
           ))}
         </div>

@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS steps (
   site_id TEXT NOT NULL,
   name TEXT NOT NULL,
   sort INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT '待开工'
+  status TEXT NOT NULL DEFAULT '待开工',
+  planned REAL NOT NULL DEFAULT 0,
+  actual REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS logs (
   id TEXT PRIMARY KEY,
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS logs (
   author TEXT NOT NULL,
   step_name TEXT,
   content TEXT NOT NULL,
+  photo TEXT,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS accepts (
@@ -55,46 +58,98 @@ CREATE TABLE IF NOT EXISTS accepts (
   comment TEXT,
   photo TEXT
 );
+CREATE TABLE IF NOT EXISTS changes (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  reason TEXT,
+  amount REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT '待确认',
+  decided_by TEXT,
+  decided_at TEXT,
+  decided_comment TEXT,
+  created_at TEXT NOT NULL
+);
 `);
 
 function genCode(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
 }
 
-const STEP_TEMPLATE = ["水电改造", "瓦工铺贴", "木工制作", "油漆涂装", "安装收尾", "竣工验收"];
+// 极简 SVG 施工照片占位（数据 URL，无需文件）
+function photo(label: string, sub: string, from: string, to: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>
+<rect width="640" height="360" fill="url(#g)"/>
+<rect x="24" y="24" width="120" height="34" rx="17" fill="rgba(255,255,255,.22)"/>
+<text x="48" y="46" font-family="sans-serif" font-size="15" fill="#fff" text-anchor="middle">施工记录</text>
+<text x="40" y="300" font-family="sans-serif" font-size="34" font-weight="bold" fill="#fff">${label}</text>
+<text x="40" y="336" font-family="sans-serif" font-size="17" fill="rgba(255,255,255,.75)">${sub}</text>
+</svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
 
-const row = db.prepare("SELECT COUNT(*) AS c FROM sites").get() as { c: number };
-if (row.c === 0) {
+const STEP_TEMPLATE = [
+  { name: "水电改造", planned: 0 },
+  { name: "瓦工铺贴", planned: 0 },
+  { name: "木工制作", planned: 0 },
+  { name: "油漆涂装", planned: 0 },
+  { name: "安装收尾", planned: 0 },
+  { name: "竣工验收", planned: 0 },
+];
+
+const cnt = db.prepare("SELECT COUNT(*) AS c FROM sites").get() as { c: number };
+if (cnt.c === 0) {
   const seed = (s: {
     code: string; name: string; community: string; owner: string; layout: string;
-    foreman: string; budget: number; steps: Record<string, string>;
+    foreman: string; budget: number;
+    steps: { name: string; status: string; planned: number; actual: number }[];
   }) => {
     const siteId = randomUUID();
     db.prepare(
       "INSERT INTO sites (id, code, name, community, owner_name, layout, foreman, budget, created_at) VALUES (?,?,?,?,?,?,?,?,?)"
     ).run(siteId, s.code, s.name, s.community, s.owner, s.layout, s.foreman, s.budget, new Date().toISOString());
-    const insStep = db.prepare("INSERT INTO steps (id, site_id, name, sort, status) VALUES (?,?,?,?,?)");
-    STEP_TEMPLATE.forEach((n, i) => insStep.run(randomUUID(), siteId, n, i, s.steps[n] ?? "待开工"));
+    const ins = db.prepare("INSERT INTO steps (id, site_id, name, sort, status, planned, actual) VALUES (?,?,?,?,?,?,?)");
+    s.steps.forEach((st, i) => ins.run(randomUUID(), siteId, st.name, i, st.status, st.planned, st.actual));
     return siteId;
   };
 
   const s1 = seed({
     code: "AX7K2M", name: "3-2-502 王姐的新家", community: "澜庭叙·雲著", owner: "王女士",
     layout: "98㎡ · 两室两厅", foreman: "李工长", budget: 186000,
-    steps: { 水电改造: "已完成", 瓦工铺贴: "进行中" },
+    steps: [
+      { name: "水电改造", status: "已完成", planned: 28000, actual: 26500 },
+      { name: "瓦工铺贴", status: "进行中", planned: 32000, actual: 12400 },
+      { name: "木工制作", status: "待开工", planned: 26000, actual: 0 },
+      { name: "油漆涂装", status: "待开工", planned: 22000, actual: 0 },
+      { name: "安装收尾", status: "待开工", planned: 18000, actual: 0 },
+      { name: "竣工验收", status: "待开工", planned: 0, actual: 0 },
+    ],
   });
   const s2 = seed({
     code: "B3N8QK", name: "7-1-301 李先生的家", community: "绿地新都会", owner: "李先生",
     layout: "128㎡ · 三室两厅", foreman: "赵工长", budget: 236000,
-    steps: { 水电改造: "进行中" },
+    steps: [
+      { name: "水电改造", status: "进行中", planned: 36000, actual: 0 },
+      { name: "瓦工铺贴", status: "待开工", planned: 38000, actual: 0 },
+      { name: "木工制作", status: "待开工", planned: 30000, actual: 0 },
+      { name: "油漆涂装", status: "待开工", planned: 24000, actual: 0 },
+      { name: "安装收尾", status: "待开工", planned: 20000, actual: 0 },
+      { name: "竣工验收", status: "待开工", planned: 0, actual: 0 },
+    ],
   });
 
-  const insLog = db.prepare("INSERT INTO logs (id, site_id, author, step_name, content, created_at) VALUES (?,?,?,?,?,?)");
+  const insLog = db.prepare("INSERT INTO logs (id, site_id, author, step_name, content, photo, created_at) VALUES (?,?,?,?,?,?,?)");
   const now = Date.now();
-  insLog.run(randomUUID(), s1, "李工长", "水电改造", "全屋水电改造完成，打压测试通过，已拍照归档，可以进入瓦工阶段。", new Date(now - 3 * 86400000).toISOString());
-  insLog.run(randomUUID(), s1, "张监理", "水电改造", "隐蔽工程验收合格，回路标识规范，同意封闭。", new Date(now - 2.5 * 86400000).toISOString());
-  insLog.run(randomUUID(), s1, "李工长", "瓦工铺贴", "厨房卫生间墙砖铺贴中，预计 3 天完成。", new Date(now - 0.5 * 86400000).toISOString());
-  insLog.run(randomUUID(), s2, "赵工长", "水电改造", "进场交底完成，水电定位放线中。", new Date(now - 86400000).toISOString());
+  insLog.run(randomUUID(), s1, "李工长", "水电改造", "全屋水电改造完成，打压测试通过，已拍照归档，可以进入瓦工阶段。",
+    photo("水电隐蔽验收", "管线横平竖直 · 打压 0.8MPa 合格", "#0f172a", "#334155"), new Date(now - 3 * 86400000).toISOString());
+  insLog.run(randomUUID(), s1, "张监理", "水电改造", "隐蔽工程验收合格，回路标识规范，同意封闭。",
+    null, new Date(now - 2.5 * 86400000).toISOString());
+  insLog.run(randomUUID(), s1, "李工长", "瓦工铺贴", "厨房卫生间墙砖铺贴中，预计 3 天完成。",
+    photo("卫生间墙砖铺贴", "已完成 60% · 阴阳角垂直", "#78350f", "#b45309"), new Date(now - 0.5 * 86400000).toISOString());
+  insLog.run(randomUUID(), s2, "赵工长", "水电改造", "进场交底完成，水电定位放线中。",
+    null, new Date(now - 86400000).toISOString());
 
   const insAcc = db.prepare("INSERT INTO accepts (id, site_id, step_name, item, done, checked_by, checked_at, comment, photo) VALUES (?,?,?,?,?,?,?,?,?)");
   const acc = (site: string, step: string, item: string, done = 0, by?: string, comment?: string) =>
@@ -108,6 +163,14 @@ if (row.c === 0) {
   acc(s2, "水电改造", "强电箱回路标识清晰");
   acc(s2, "水电改造", "水路打压测试 0.8MPa 保压 30 分钟");
   acc(s2, "水电改造", "插座点位与图纸一致");
+
+  const insChg = db.prepare("INSERT INTO changes (id, site_id, title, reason, amount, status, decided_by, decided_at, decided_comment, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)");
+  insChg.run(randomUUID(), s1, "卫生间增加壁龛", "瓦工师傅建议，洗浴用品有地方放了", 380, "已确认",
+    "王女士", new Date(now - 4 * 86400000).toISOString(), "实用，同意", new Date(now - 5 * 86400000).toISOString());
+  insChg.run(randomUUID(), s1, "厨房水槽更换抽拉式龙头", "原型号缺货，升级款同价换差价 260", 260, "待确认",
+    null, null, null, new Date(now - 0.8 * 86400000).toISOString());
+  insChg.run(randomUUID(), s2, "客厅增加两组筒灯点位", "照明设计调整，吊顶后补线", 150, "待确认",
+    null, null, null, new Date(now - 0.5 * 86400000).toISOString());
 }
 
 export default db;

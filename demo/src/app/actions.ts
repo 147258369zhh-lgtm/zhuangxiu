@@ -2,18 +2,25 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { saveUpload } from "@/lib/upload";
 import {
   addLog,
   confirmAccept,
+  createChange,
   createSite,
+  decideChange,
   getSite,
   getSiteByCode,
   setStepStatus,
+  updateStepBudget,
   STEP_STATUS,
 } from "@/lib/data";
+
+function refresh(siteId: string, code?: string) {
+  revalidatePath("/");
+  revalidatePath(`/gongdi/${siteId}`);
+  if (code) revalidatePath(`/c/${code}`);
+}
 
 export async function createSiteAction(fd: FormData) {
   const name = String(fd.get("name") || "").trim();
@@ -36,10 +43,20 @@ export async function advanceStepAction(fd: FormData) {
   const current = String(fd.get("current") || "");
   const idx = STEP_STATUS.indexOf(current as (typeof STEP_STATUS)[number]);
   if (idx < 0) return;
-  const next = STEP_STATUS[(idx + 1) % STEP_STATUS.length];
-  setStepStatus(stepId, next);
-  revalidatePath(`/gongdi/${siteId}`);
-  revalidatePath("/");
+  setStepStatus(stepId, STEP_STATUS[(idx + 1) % STEP_STATUS.length]);
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+export async function updateStepBudgetAction(fd: FormData) {
+  const stepId = String(fd.get("stepId") || "");
+  const siteId = String(fd.get("siteId") || "");
+  if (!stepId) return;
+  const planned = Number(fd.get("planned") || 0);
+  const actual = Number(fd.get("actual") || 0);
+  updateStepBudget(stepId, planned, actual);
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
 }
 
 export async function addLogAction(fd: FormData) {
@@ -48,10 +65,10 @@ export async function addLogAction(fd: FormData) {
   if (!siteId || !content) return;
   const author = String(fd.get("author") || "工长");
   const stepName = String(fd.get("stepName") || "");
-  addLog(siteId, author, stepName, content);
+  const photo = await saveUpload(fd.get("photo") as File | null);
+  addLog(siteId, author, stepName, content, photo);
   const site = getSite(siteId);
-  if (site) revalidatePath(`/c/${site.code}`);
-  revalidatePath(`/gongdi/${siteId}`);
+  refresh(siteId, site?.code);
 }
 
 export async function confirmAcceptAction(fd: FormData) {
@@ -60,18 +77,27 @@ export async function confirmAcceptAction(fd: FormData) {
   const site = getSiteByCode(code);
   if (!site || !acceptId) return;
   const comment = String(fd.get("comment") || "").trim() || null;
-  let photo: string | null = null;
-  const f = fd.get("photo");
-  if (f instanceof File && f.size > 0) {
-    const ext =
-      (f.name.split(".").pop() ?? "jpg").replace(/[^a-zA-Z0-9]/g, "").slice(0, 5) || "jpg";
-    const name = `${randomUUID()}.${ext}`;
-    const dir = join(process.cwd(), ".data", "uploads");
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, name), Buffer.from(await f.arrayBuffer()));
-    photo = name;
-  }
+  const photo = await saveUpload(fd.get("photo") as File | null);
   confirmAccept(acceptId, site.owner_name || "业主", comment, photo);
-  revalidatePath(`/c/${site.code}`);
-  revalidatePath(`/gongdi/${site.id}`);
+  refresh(site.id, site.code);
+}
+
+export async function createChangeAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const title = String(fd.get("title") || "").trim();
+  if (!siteId || !title) return;
+  createChange(siteId, title, String(fd.get("reason") || ""), Number(fd.get("amount") || 0));
+  const site = getSite(siteId);
+  refresh(siteId, site?.code);
+}
+
+export async function decideChangeAction(fd: FormData) {
+  const id = String(fd.get("changeId") || "");
+  const code = String(fd.get("code") || "");
+  const site = getSiteByCode(code);
+  if (!site || !id) return;
+  const decision = String(fd.get("decision")) === "已确认" ? "已确认" : "已拒绝";
+  const comment = String(fd.get("comment") || "").trim() || null;
+  decideChange(id, decision, site.owner_name || "业主", comment);
+  refresh(site.id, site.code);
 }

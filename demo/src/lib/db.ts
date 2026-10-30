@@ -141,6 +141,16 @@ CREATE TABLE IF NOT EXISTS task_photos (
   note TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS task_points (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  spec TEXT,
+  x REAL NOT NULL DEFAULT 50,
+  y REAL NOT NULL DEFAULT 50,
+  status TEXT NOT NULL DEFAULT '未施工'
+);
 CREATE TABLE IF NOT EXISTS self_rooms (
   id TEXT PRIMARY KEY,
   plan_id TEXT NOT NULL DEFAULT 'my-home',
@@ -169,6 +179,7 @@ ensureColumn("steps", "planned_days", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("steps", "started_at", "TEXT");
 ensureColumn("steps", "finished_at", "TEXT");
 ensureColumn("payments", "due_date", "TEXT");
+ensureColumn("task_photos", "point_id", "TEXT");
 
 function genCode(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
@@ -199,6 +210,35 @@ ${dots}
 <text x="${x0}" y="36" font-family="sans-serif" font-size="20" font-weight="bold" fill="#0f172a">${title}</text>
 <text x="${W - x0}" y="36" font-family="sans-serif" font-size="13" fill="${to}" text-anchor="end">${room} · 施工点位图</text>
 <text x="${x0}" y="${H - 16}" font-family="sans-serif" font-size="12" fill="#94a3b8">演示装饰 · 图纸编号 ZX-${points}0${Math.abs(from.length) % 10}</text>
+</svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+/** 空白平面图（PLAN-V2）：只画房间轮廓/门窗/网格，点位由前端交互层叠加（见 DrawingBoard） */
+export function makePlan(title: string, room: string): string {
+  const W = 640, H = 400, x0 = 60, y0 = 54, w = 520, h = 292;
+  const grid = Array.from({ length: 9 }, (_, i) =>
+    `<line x1="${x0}" y1="${y0 + i * (h / 8)}" x2="${x0 + w}" y2="${y0 + i * (h / 8)}" stroke="#eef2f7" stroke-width="1"/>` +
+    `<line x1="${x0 + i * (w / 8)}" y1="${y0}" x2="${x0 + i * (w / 8)}" y2="${y0 + h}" stroke="#eef2f7" stroke-width="1"/>`
+  ).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+<!--PLAN-V2-->
+<rect width="${W}" height="${H}" fill="#f8fafc"/>
+${grid}
+<!-- 墙体（双线表示厚度） -->
+<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#ffffff" stroke="#cbd5e1" stroke-width="10" rx="2"/>
+<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="none" stroke="#94a3b8" stroke-width="1.5" rx="2"/>
+<!-- 门（左下 90° 开启弧） -->
+<path d="M${x0 + 30} ${y0 + h} v-70" stroke="#cbd5e1" stroke-width="8"/>
+<path d="M${x0 + 30} ${y0 + h - 70} a70 70 0 0 1 70 70" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="5 5"/>
+<!-- 窗（右墙双线） -->
+<rect x="${x0 + w - 5}" y="${y0 + 90}" width="10" height="110" fill="#e0f2fe" stroke="#7dd3fc" stroke-width="2"/>
+<!-- 尺寸标注 -->
+<text x="${x0 + w / 2}" y="${y0 + h + 22}" font-family="sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">开间 3.6m</text>
+<text x="${x0 - 26}" y="${y0 + h / 2}" font-family="sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle" transform="rotate(-90 ${x0 - 26} ${y0 + h / 2})">进深 4.2m</text>
+<text x="${x0}" y="34" font-family="sans-serif" font-size="19" font-weight="bold" fill="#0f172a">${title}</text>
+<text x="${W - x0}" y="34" font-family="sans-serif" font-size="13" fill="#64748b" text-anchor="end">${room} · 施工点位图</text>
+<text x="${x0}" y="${H - 14}" font-family="sans-serif" font-size="11" fill="#b6c2d2">演示装饰 · 点击图上编号查看点位要求</text>
 </svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
@@ -448,6 +488,63 @@ if (tCnt.n === 0) {
     mkP(t1, "material", "熊猫电缆", "BV 4㎡ 红蓝两组", 0.9);
     mkP(t1, "after", "定位放线完成", "横平竖直，点位与图纸一致", 0.8);
     mkT(b3.id, "主卧电视墙增加网口", "主卧", "水电改造", 1, "#0891b2", "张师傅", "待施工", "业主李先生今日新增需求", 0.4);
+  }
+}
+
+// 图纸升级为空白平面图（点位由前端叠加）；老库自动重绘一次
+const planRows = db.prepare("SELECT id, title, room, drawing FROM tasks").all() as
+  { id: string; title: string; room: string | null; drawing: string | null }[];
+for (const t of planRows) {
+  const svg = t.drawing?.split(",")[1] ? Buffer.from(t.drawing.split(",")[1], "base64").toString() : "";
+  if (!svg.includes("PLAN-V2")) {
+    db.prepare("UPDATE tasks SET drawing=? WHERE id=?").run(makePlan(t.title, t.room ?? "现场"), t.id);
+  }
+}
+
+// 任务点位种子（点位级施工要求 + 图纸坐标百分比）：按任务标题匹配，老库自动补齐
+const tpCnt = db.prepare("SELECT COUNT(*) AS n FROM task_points").get() as { n: number };
+if (tpCnt.n === 0) {
+  const POINTS: Record<string, [string, string, number, number][]> = {
+    "厨房墙砖铺贴": [
+      ["东墙 · 灶台背景墙", "300×600 墙砖，阳角 45° 倒角，缝宽 2mm", 82, 30],
+      ["烟道包管", "包管阳角垂直度 ≤2mm，砖缝与相邻墙对齐", 60, 26],
+      ["西墙 · 水槽区", "预留检修口，插座开孔用开孔器", 18, 46],
+      ["南墙 · 窗下墙", "窗台石下口找平，砖缝对齐窗框中线", 50, 78],
+    ],
+    "卫生间壁龛砌筑": [
+      ["壁龛主体", "净深 120mm，内壁找平后做防水", 44, 34],
+      ["防水收口", "壁龛四周刷防水两遍，上翻 300mm", 64, 60],
+      ["瓷砖收边", "收边条压边，阳角对缝", 30, 62],
+    ],
+    "安装卫生间地漏": [
+      ["地漏位", "居排水最低点，四周砖对角切", 50, 55],
+      ["排水坡度", "坡度 2%，泼水测试无积水", 66, 70],
+    ],
+    "客厅水电定位放线": [
+      ["电视墙", "插座中心距地 300mm，预埋 50 管", 25, 30],
+      ["空调位", "16A 插座距顶 300mm，单独回路", 85, 26],
+      ["沙发两侧", "距地 300mm，左右对称", 78, 55],
+      ["餐桌", "距地 300mm，桌下不挡腿", 45, 72],
+    ],
+    "主卧电视墙增加网口": [
+      ["网口点位", "六类网线，与强电间距 ≥300mm", 62, 45],
+    ],
+  };
+  // 已完成任务的全部点位默认已完成；施工中任务默认前两个已完成
+  const DONE_COUNT: Record<string, number> = {
+    "厨房墙砖铺贴": 2,
+  };
+  const insTP = db.prepare(
+    "INSERT INTO task_points (id, task_id, seq, name, spec, x, y, status) VALUES (?,?,?,?,?,?,?,?)"
+  );
+  for (const t of planRows) {
+    const pts = POINTS[t.title];
+    if (!pts) continue;
+    const st = (db.prepare("SELECT status FROM tasks WHERE id=?").get(t.id) as { status: string }).status;
+    const doneN = st === "已完成" ? pts.length : DONE_COUNT[t.title] ?? 0;
+    pts.forEach(([name, spec, x, y], i) =>
+      insTP.run(randomUUID(), t.id, i + 1, name, spec, x, y, i < doneN ? "已完成" : "未施工")
+    );
   }
 }
 

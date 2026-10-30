@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getRole, ROLE_LABEL } from "@/lib/role";
-import { listTasksForWorker, WORKER_NAME, getTaskPhotos } from "@/lib/data";
+import { listTasksForWorker, WORKER_NAME, getTaskPhotos, getTaskPoints } from "@/lib/data";
 import { MiniShell } from "@/components/MiniShell";
 import { fmtDate } from "@/components/ui";
 
@@ -13,6 +13,8 @@ const TASK_TONE: Record<string, string> = {
 
 function TaskCard({ t }: { t: Awaited<ReturnType<typeof listTasksForWorker>>[number] }) {
   const photos = getTaskPhotos(t.id);
+  const points = getTaskPoints(t.id);
+  const pointDone = points.filter((p) => p.status === "已完成").length;
   const liveBadge = t.live === 1;
   return (
     <Link
@@ -40,6 +42,14 @@ function TaskCard({ t }: { t: Awaited<ReturnType<typeof listTasksForWorker>>[num
           <span>{t.step_name}</span>
           <span className="text-zinc-300">·</span>
           <span>📷 {photos.length} 张</span>
+          {points.length > 0 && (
+            <>
+              <span className="text-zinc-300">·</span>
+              <span className={pointDone === points.length ? "text-emerald-600" : ""}>
+                📍 点位 {pointDone}/{points.length}
+              </span>
+            </>
+          )}
         </div>
         <div className="mt-2 rounded-lg bg-indigo-50/60 px-2.5 py-1.5 text-[11px] text-indigo-600">
           🏠 {t.site_name} <span className="font-mono text-indigo-400">/c/{t.code}</span>
@@ -113,7 +123,7 @@ export default async function WorkerPage({
           <div className="card p-4">
             <div className="text-xs font-semibold text-zinc-600">🛠️ 现场能力（小程序）</div>
             <ul className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-zinc-500">
-              <li>· 点位图纸：任务自带施工图，现场对照定位</li>
+              <li>· 点位对照：图纸上点编号看要求，点位级拍照与完成打卡</li>
               <li>· 三类拍照：施工前 / 材料照片 / 施工后，自动归档</li>
               <li>· 打卡完成：照片同步工长、监理、业主查看</li>
               <li>· 现场直播（远期）：live-pusher 推流，各方线上围观</li>

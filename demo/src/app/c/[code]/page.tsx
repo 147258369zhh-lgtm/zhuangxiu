@@ -289,7 +289,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
                           <ZoomImg src={p.url} alt={p.task_title} className="h-28 w-full object-cover" />
                           <div className="bg-white px-2 py-1">
                             <div className="truncate text-[9px] text-zinc-500">{p.task_title}</div>
-                            <div className="text-[8px] text-zinc-300">{p.room} · {p.worker}</div>
+                            <div className="text-[8px] text-zinc-300">{p.point_name ?? `${p.room} · ${p.worker}`}</div>
                           </div>
                         </div>
                       ))}

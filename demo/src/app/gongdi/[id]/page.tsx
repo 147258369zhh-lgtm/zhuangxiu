@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { countLiveTasks, getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSite, getSitePhotos, getSteps, getTasks, getWarranties, warrantyDaysLeft } from "@/lib/data";
+import { countLiveTasks, getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSite, getSitePhotos, getSteps, getTaskPoints, getTasks, getWarranties, warrantyDaysLeft } from "@/lib/data";
 import { CHANGE_PITFALLS } from "@/lib/checklists";
 import {
   addLogAction,
@@ -479,6 +479,18 @@ export default async function GongdiPage({ params, searchParams }: { params: Pro
             )}
             <span className="text-[10px] text-zinc-400">📍{t.room} · {t.worker}</span>
             <StatusBadge status={t.status} />
+            {(() => {
+              const pts = getTaskPoints(t.id);
+              if (pts.length === 0) return null;
+              const d = pts.filter((p) => p.status === "已完成").length;
+              return (
+                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ring-1 ring-inset ${
+                  d === pts.length ? "bg-emerald-50 text-emerald-600 ring-emerald-200" : "bg-indigo-50 text-indigo-600 ring-indigo-100"
+                }`}>
+                  点位 {d}/{pts.length}
+                </span>
+              );
+            })()}
             <span className="ml-auto font-mono text-[10px] text-zinc-400">
               📷{sitePhotos.filter((p) => p.task_id === t.id).length} · {fmtDate(t.created_at)}
             </span>

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import db, { genCode, makeDrawing, makeTaskPhoto } from "./db";
+import db, { genCode, makePlan, makeTaskPhoto } from "./db";
 import { STEP_TEMPLATES, ACCEPT_TEMPLATES, PAYMENT_TEMPLATES, type SiteTemplate } from "./checklists";
 
 export type Site = {
@@ -354,9 +354,14 @@ export type Task = {
 };
 export type TaskPhoto = {
   id: string; task_id: string; category: "before" | "material" | "after"; url: string; note: string | null; created_at: string;
+  point_id: string | null;
+};
+export type TaskPoint = {
+  id: string; task_id: string; seq: number; name: string; spec: string | null;
+  x: number; y: number; status: "未施工" | "已完成";
 };
 export type TaskWithSite = Task & { site_name: string; code: string; community: string | null };
-export type SitePhoto = TaskPhoto & { task_title: string; room: string | null; worker: string };
+export type SitePhoto = TaskPhoto & { task_title: string; room: string | null; worker: string; point_name: string | null };
 
 export const TASK_STATUS = ["待施工", "施工中", "已完成"] as const;
 
@@ -366,11 +371,21 @@ export const getTask = (id: string) => get<Task>("SELECT * FROM tasks WHERE id=?
 export const getTaskPhotos = (taskId: string) =>
   all<TaskPhoto>("SELECT * FROM task_photos WHERE task_id=? ORDER BY created_at", taskId);
 
+/** 任务点位（图纸上的编号点，带施工要求与完成状态） */
+export const getTaskPoints = (taskId: string) =>
+  all<TaskPoint>("SELECT * FROM task_points WHERE task_id=? ORDER BY seq", taskId);
+
+export function setTaskPointStatus(pointId: string, status: "未施工" | "已完成") {
+  db.prepare("UPDATE task_points SET status=? WHERE id=?").run(status, pointId);
+}
+
 /** 该工地全部现场照（带任务来源信息，供详情页照片墙） */
 export const getSitePhotos = (siteId: string) =>
   all<SitePhoto>(
-    `SELECT p.*, t.title AS task_title, t.room, t.worker
-       FROM task_photos p JOIN tasks t ON t.id = p.task_id
+    `SELECT p.*, t.title AS task_title, t.room, t.worker, tp.name AS point_name
+       FROM task_photos p
+       JOIN tasks t ON t.id = p.task_id
+       LEFT JOIN task_points tp ON tp.id = p.point_id
       WHERE t.site_id=? ORDER BY p.created_at DESC`, siteId);
 
 /** 直播中的任务数（该工地） */
@@ -398,16 +413,32 @@ export function createTask(siteId: string, input: { title: string; room: string;
   const points = Math.max(1, Math.min(9, Math.round(input.title.length / 4) + 1));
   db.prepare(
     "INSERT INTO tasks (id, site_id, title, room, step_name, drawing, worker, status, note, live, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-  ).run(id, siteId, input.title, input.room, input.stepName, makeDrawing(input.title, input.room, points, "#e2e8f0", tone),
+  ).run(id, siteId, input.title, input.room, input.stepName, makePlan(input.title, input.room),
     input.worker, "待施工", input.note, 0, new Date().toISOString());
+  // 新任务默认带 3 个点位，工长/工人可在此基础上对照施工
+  const insTP = db.prepare(
+    "INSERT INTO task_points (id, task_id, seq, name, spec, x, y, status) VALUES (?,?,?,?,?,?,?,?)"
+  );
+  const defaults: [string, string, number, number][] = [
+    ["主操作面", "按图纸定位，基层处理到位后再施工", 38, 36],
+    ["收口 / 边角", "阳角顺直，收口条压边固定", 68, 58],
+    ["验收观察点", "完成后拍照留档，工长复核", 52, 76],
+  ];
+  defaults.forEach(([name, spec, x, y], i) => insTP.run(randomUUID(), id, i + 1, name, spec, x, y, "未施工"));
   return id;
 }
 
-/** 模拟现场拍照：生成分类照片并入库 */
-export function addTaskPhoto(taskId: string, category: "before" | "material" | "after", label: string, sub: string) {
-  db.prepare("INSERT INTO task_photos (id, task_id, category, url, note, created_at) VALUES (?,?,?,?,?,?)").run(
-    randomUUID(), taskId, category, makeTaskPhoto(category, label, sub), null, new Date().toISOString()
-  );
+/** 模拟现场拍照：生成分类照片并入库（可关联到具体点位） */
+export function addTaskPhoto(
+  taskId: string,
+  category: "before" | "material" | "after",
+  label: string,
+  sub: string,
+  pointId?: string | null
+) {
+  db.prepare(
+    "INSERT INTO task_photos (id, task_id, category, url, note, point_id, created_at) VALUES (?,?,?,?,?,?,?)"
+  ).run(randomUUID(), taskId, category, makeTaskPhoto(category, label, sub), null, pointId ?? null, new Date().toISOString());
 }
 
 export function setTaskStatus(id: string, status: "待施工" | "施工中" | "已完成") {

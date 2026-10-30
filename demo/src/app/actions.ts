@@ -22,10 +22,12 @@ import {
   getSiteByCode,
   getTask,
   getTaskPhotos,
+  getTaskPoints,
   POINT_TYPES,
   receivePayment,
   removeSelfPoint,
   setStepStatus,
+  setTaskPointStatus,
   setTaskStatus,
   toggleTaskLive,
   updateSite,
@@ -247,18 +249,33 @@ export async function createTaskAction(fd: FormData) {
   refreshTask(siteId);
 }
 
-/** 工人现场拍照（模拟上传）：生成分类照片入库 */
+/** 工人现场拍照（模拟上传）：生成分类照片入库，可绑定到具体点位 */
 export async function addTaskPhotoAction(fd: FormData) {
   const taskId = String(fd.get("taskId") || "");
   const category = String(fd.get("category") || "") as "before" | "material" | "after";
+  const pointId = String(fd.get("pointId") || "") || null;
   if (!taskId || !["before", "material", "after"].includes(category)) return;
   const task = getTask(taskId);
   if (!task || task.status === "已完成") return;
+  const point = pointId ? getTaskPoints(taskId).find((p) => p.id === pointId) : null;
+  const where = point ? `${point.name}` : `${task.room ?? ""}`;
   const sub =
-    category === "before" ? `${task.room ?? ""}原始现场 · 打卡定位`
-    : category === "material" ? `${task.room ?? ""}材料核对 · 与清单一致`
-    : `${task.room ?? ""}安装完成 · 待验收`;
-  addTaskPhoto(taskId, category, task.title, sub);
+    category === "before" ? `${where}原始现场 · 打卡定位`
+    : category === "material" ? `${where}材料核对 · 与清单一致`
+    : `${where}安装完成 · 待验收`;
+  addTaskPhoto(taskId, category, task.title, sub, pointId);
+  refreshTask(task.site_id);
+}
+
+/** 点位完成打卡 / 撤销（点位级进度，工人自检） */
+export async function toggleTaskPointAction(fd: FormData) {
+  const taskId = String(fd.get("taskId") || "");
+  const pointId = String(fd.get("pointId") || "");
+  const to = String(fd.get("to") || "") as "未施工" | "已完成";
+  if (!taskId || !pointId || !["未施工", "已完成"].includes(to)) return;
+  const task = getTask(taskId);
+  if (!task) return;
+  setTaskPointStatus(pointId, to);
   refreshTask(task.site_id);
 }
 

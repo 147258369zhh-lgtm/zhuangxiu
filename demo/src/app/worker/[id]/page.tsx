@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getRole } from "@/lib/role";
-import { getTask, getTaskPhotos, getSite, WORKER_NAME } from "@/lib/data";
+import { getTask, getTaskPhotos, getTaskPoints, getSite, WORKER_NAME } from "@/lib/data";
 import { MiniShell } from "@/components/MiniShell";
+import { DrawingBoard } from "@/components/DrawingBoard";
 import { SubmitButton } from "@/components/SubmitButton";
 import { fmtDate, fmtTime } from "@/components/ui";
 import {
@@ -26,7 +27,9 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
   if (!task || task.worker !== WORKER_NAME) notFound();
   const site = getSite(task.site_id);
   const photos = getTaskPhotos(id);
+  const points = getTaskPoints(id);
   const byCat = (c: string) => photos.filter((p) => p.category === c);
+  const pointName = (pid: string | null) => points.find((p) => p.id === pid)?.name ?? "任务整体";
   const isLive = task.live === 1;
   const open = task.status !== "已完成";
 
@@ -43,15 +46,16 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
         <div className="text-[10px] text-zinc-400">{site?.community} · {task.step_name}</div>
       </div>
 
-      {/* 点位图纸 */}
-      <div className="card mb-3 p-0">
-        <div className="flex items-center justify-between px-4 pt-3">
-          <div className="text-xs font-semibold">📐 点位图纸</div>
-          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600">现场对照施工</span>
-        </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={task.drawing ?? ""} alt="点位图纸" className="mt-2 w-full" />
-      </div>
+      {/* 点位对照图（图纸 + 可点击点位 + 点位级拍照） */}
+      <DrawingBoard
+        plan={task.drawing ?? ""}
+        points={points.map((p) => ({
+          id: p.id, seq: p.seq, name: p.name, spec: p.spec, x: p.x, y: p.y, status: p.status,
+        }))}
+        photos={photos.map((p) => ({ id: p.id, point_id: p.point_id, category: p.category, url: p.url }))}
+        taskId={id}
+        editable={open}
+      />
 
       {/* 拍照区（未完成时开放） */}
       {open ? (
@@ -91,8 +95,11 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {list.map((p) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={p.id} src={p.url} alt={c.label} className="w-full rounded-lg ring-1 ring-zinc-100" />
+                    <div key={p.id} className="overflow-hidden rounded-lg bg-white ring-1 ring-zinc-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.url} alt={c.label} className="w-full" />
+                      <div className="truncate px-1.5 py-0.5 text-[9px] text-zinc-400">{pointName(p.point_id)}</div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -118,8 +125,11 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
                 <div className="mb-1.5 text-[11px] font-semibold text-zinc-600">{c.icon} {c.label}</div>
                 <div className="grid grid-cols-2 gap-2">
                   {list.map((p) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={p.id} src={p.url} alt={c.label} className="w-full rounded-lg ring-1 ring-zinc-100" />
+                    <div key={p.id} className="overflow-hidden rounded-lg bg-white ring-1 ring-zinc-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.url} alt={c.label} className="w-full" />
+                      <div className="truncate px-1.5 py-0.5 text-[9px] text-zinc-400">{pointName(p.point_id)}</div>
+                    </div>
                   ))}
                 </div>
               </div>

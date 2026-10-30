@@ -8,8 +8,8 @@ import { StatusBadge, daysBetween, fmtDate, fmtMoney, fmtTime } from "@/componen
 
 export const metadata = { title: "工地报告 · 装修管理平台 Demo" };
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th className="border-b border-zinc-200 px-2 py-1.5 text-left text-[11px] font-medium text-zinc-400">{children}</th>;
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <th className={`border-b border-zinc-200 px-2 py-1.5 text-left text-[11px] font-medium text-zinc-400 ${className}`}>{children}</th>;
 }
 function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <td className={`border-b border-zinc-100 px-2 py-1.5 text-xs text-zinc-700 ${className}`}>{children}</td>;

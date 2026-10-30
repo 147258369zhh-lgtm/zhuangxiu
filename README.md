@@ -22,6 +22,33 @@
 └── *.md                  规划与路线文档
 ```
 
+## 怎么跑
+
+```bash
+cd demo
+npm install          # 首次
+npm run dev          # http://localhost:3300/start
+```
+
+**演示入口：`/start`**（双端导航 + 演示动线）
+
+| 路由 | 说明 |
+|---|---|
+| `/start` | 演示导航（先看这个） |
+| `/self` | 桌面端自装工作台：点位 / 材料清单 / 预算 / 验收 / 同步 五个 tab |
+| `/m` | 小程序端（手机尺寸）：首页 / 清单 / 记账 / 验收 / 照片 |
+| `/` | 旧的公司装线原型（仍是旧 SQLite 假表，未接新库） |
+
+校验脚本（不需要起服务）：
+
+```bash
+node scripts/verify-schema.mjs      # 组合外键 / 部分唯一索引真的拦得住
+node scripts/smoke-all-tables.mjs   # 33 张表逐张插一行，抓 foreign key mismatch
+node scripts/check-numbers.mjs      # 从库算 BOM/预算，和页面数字对照
+```
+
+数据文件 `demo/.data/self.db`（33 张表，首访自动建表+种子）。删掉它重启即恢复演示数据。
+
 ## 关键决策
 
 | 项 | 结论 |

@@ -119,6 +119,28 @@ CREATE TABLE IF NOT EXISTS warranties (
   end_date TEXT NOT NULL,
   note TEXT
 );
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  room TEXT,
+  step_name TEXT,
+  drawing TEXT,
+  worker TEXT NOT NULL DEFAULT '张师傅',
+  status TEXT NOT NULL DEFAULT '待施工',
+  note TEXT,
+  live INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  done_at TEXT
+);
+CREATE TABLE IF NOT EXISTS task_photos (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  url TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL
+);
 `);
 
 // 旧库平滑升级：缺列自动补（dev 迭代友好）
@@ -135,6 +157,57 @@ ensureColumn("payments", "due_date", "TEXT");
 
 function genCode(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
+}
+
+/* ---------- 任务图纸 / 分类照片生成器（SVG data URL，无需文件） ---------- */
+
+/** 点位图纸：白底网格 + 房间线框 + 圆点标记 */
+export function makeDrawing(title: string, room: string, points: number, from: string, to: string): string {
+  const W = 640, H = 400, x0 = 70, y0 = 60, w = 500, h = 280;
+  const dots = Array.from({ length: points }, (_, i) => {
+    const px = x0 + 60 + (i % Math.ceil(points / 2)) * ((w - 140) / Math.max(1, Math.ceil(points / 2) - 1));
+    const py = y0 + 70 + Math.floor(i / Math.ceil(points / 2)) * 110;
+    return `<circle cx="${Math.round(px)}" cy="${py}" r="16" fill="${to}" opacity=".9"/>
+      <circle cx="${Math.round(px)}" cy="${py}" r="26" fill="none" stroke="${to}" stroke-dasharray="3 4" opacity=".5"/>
+      <text x="${Math.round(px)}" y="${py + 5}" font-family="sans-serif" font-size="14" font-weight="bold" fill="#fff" text-anchor="middle">${i + 1}</text>
+      <text x="${Math.round(px)}" y="${py + 46}" font-family="sans-serif" font-size="11" fill="#64748b" text-anchor="middle">${["A", "B", "C", "D", "E", "F"][i] ?? ""} 点位</text>`;
+  }).join("");
+  const grid = Array.from({ length: 9 }, (_, i) =>
+    `<line x1="${x0}" y1="${y0 + i * (h / 8)}" x2="${x0 + w}" y2="${y0 + i * (h / 8)}" stroke="#e2e8f0" stroke-width="1"/>` +
+    `<line x1="${x0 + i * (w / 8)}" y1="${y0}" x2="${x0 + i * (w / 8)}" y2="${y0 + h}" stroke="#e2e8f0" stroke-width="1"/>`
+  ).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+<rect width="${W}" height="${H}" fill="#f8fafc"/>
+${grid}
+<rect x="${x0}" y="${y0}" width="${w}" height="${h}" fill="#fff" stroke="#94a3b8" stroke-width="3" rx="4"/>
+${dots}
+<text x="${x0}" y="36" font-family="sans-serif" font-size="20" font-weight="bold" fill="#0f172a">${title}</text>
+<text x="${W - x0}" y="36" font-family="sans-serif" font-size="13" fill="${to}" text-anchor="end">${room} · 施工点位图</text>
+<text x="${x0}" y="${H - 16}" font-family="sans-serif" font-size="12" fill="#94a3b8">演示装饰 · 图纸编号 ZX-${points}0${Math.abs(from.length) % 10}</text>
+</svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+/** 工人现场照：拍立得风格，色调随分类（before=灰褐 / material=蓝 / after=绿） */
+export function makeTaskPhoto(category: string, label: string, sub: string): string {
+  const [from, to] =
+    category === "before" ? ["#3f3f46", "#78716c"]
+    : category === "material" ? ["#1e3a8a", "#2563eb"]
+    : ["#14532d", "#16a34a"];
+  const tag = category === "before" ? "施工前" : category === "material" ? "材料照片" : "施工后";
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>
+<rect width="640" height="360" fill="url(#g)"/>
+<rect x="20" y="20" width="106" height="32" rx="16" fill="rgba(255,255,255,.2)"/>
+<text x="40" y="41" font-family="sans-serif" font-size="14" fill="#fff" text-anchor="middle">现场拍摄</text>
+<text x="620" y="41" font-family="sans-serif" font-size="13" fill="rgba(255,255,255,.7)" text-anchor="end">${ts}</text>
+<text x="40" y="300" font-family="sans-serif" font-size="32" font-weight="bold" fill="#fff">${tag} · ${label}</text>
+<text x="40" y="336" font-family="sans-serif" font-size="16" fill="rgba(255,255,255,.75)">${sub}</text>
+</svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
 // 极简 SVG 施工照片占位（数据 URL，无需文件）
@@ -314,6 +387,52 @@ if (wCnt.n === 0) {
     };
     mk("水电隐蔽工程", 7, 24, "打压 0.8MPa 一次通过");
     mk("卫生间防水工程", 6, 60, "闭水试验 48h 无渗漏");
+  }
+}
+
+// 任务+照片种子（独立判断，老库也能自动补齐）：
+// 王姐家（瓦工阶段）：1 已完成带三类照、1 施工中、1 待施工；
+// 李先生家（水电阶段）：主卧加网口（对应业主留言需求）、已完成带三类照
+const tCnt = db.prepare("SELECT COUNT(*) AS n FROM tasks").get() as { n: number };
+if (tCnt.n === 0) {
+  const byCode = (code: string) =>
+    db.prepare("SELECT id FROM sites WHERE code=?").get(code) as { id: string } | undefined;
+  const ax = byCode("AX7K2M");
+  const b3 = byCode("B3N8QK");
+  const insT = db.prepare(
+    "INSERT INTO tasks (id, site_id, title, room, step_name, drawing, worker, status, note, live, created_at, done_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+  );
+  const insP = db.prepare("INSERT INTO task_photos (id, task_id, category, url, note, created_at) VALUES (?,?,?,?,?,?)");
+  const now = Date.now();
+  const at = (d: number) => new Date(now - d * 86400000).toISOString();
+  const mkT = (siteId: string, title: string, room: string, step: string, points: number, tone: string,
+    worker: string, status: string, note: string, daysAgo: number, live = 0) => {
+    const id = randomUUID();
+    insT.run(id, siteId, title, room, step,
+      makeDrawing(title, room, points, "#e2e8f0", tone), worker, status, note, live, at(daysAgo),
+      status === "已完成" ? at(Math.max(0, daysAgo - 0.4)) : null);
+    return id;
+  };
+  const mkP = (taskId: string, category: string, label: string, sub: string, daysAgo: number) =>
+    insP.run(randomUUID(), taskId, category, makeTaskPhoto(category, label, sub), null, at(daysAgo));
+
+  if (ax?.id) {
+    // 已完成：卫生间地漏安装（三类照齐全）
+    const t1 = mkT(ax.id, "安装卫生间地漏", "卫生间", "瓦工铺贴", 3, "#2563eb", "张师傅", "已完成", "坡度找平 2%", 2.2);
+    mkP(t1, "before", "原始地漏", "原铸铁地漏锈蚀待更换", 2.5);
+    mkP(t1, "material", "不锈钢地漏", "潜水艇 50 管深水封", 2.3);
+    mkP(t1, "after", "安装完成", "坡度找平已完成 2%，排水测试顺畅", 2.2);
+    // 施工中：厨房墙砖（可演示开直播）
+    mkT(ax.id, "厨房墙砖铺贴", "厨房", "瓦工铺贴", 4, "#b45309", "张师傅", "施工中", "预计 3 天完工", 0.6);
+    // 待施工
+    mkT(ax.id, "卫生间壁龛砌筑", "卫生间", "瓦工铺贴", 2, "#b45309", "张师傅", "待施工", "", 0.5);
+  }
+  if (b3?.id) {
+    const t1 = mkT(b3.id, "客厅水电定位放线", "客厅", "水电改造", 5, "#0891b2", "张师傅", "已完成", "按图放线，业主已确认", 0.8);
+    mkP(t1, "before", "原始毛坯", "水电进场前原状", 1.0);
+    mkP(t1, "material", "熊猫电缆", "BV 4㎡ 红蓝两组", 0.9);
+    mkP(t1, "after", "定位放线完成", "横平竖直，点位与图纸一致", 0.8);
+    mkT(b3.id, "主卧电视墙增加网口", "主卧", "水电改造", 1, "#0891b2", "张师傅", "待施工", "业主李先生今日新增需求", 0.4);
   }
 }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import db, { genCode } from "./db";
+import db, { genCode, makeDrawing, makeTaskPhoto } from "./db";
 import { STEP_TEMPLATES, ACCEPT_TEMPLATES, PAYMENT_TEMPLATES, type SiteTemplate } from "./checklists";
 
 export type Site = {
@@ -254,6 +254,12 @@ export function recentEvents(limit = 6): RecentEvent[] {
       UNION ALL
       SELECT 'msg', s.code, s.name, m.author, m.sender, m.content, m.created_at
        FROM messages m JOIN sites s ON s.id = m.site_id
+      UNION ALL
+      SELECT 'photo', s.code, s.name, t.worker, p.category, t.title, p.created_at
+       FROM task_photos p JOIN tasks t ON t.id = p.task_id JOIN sites s ON s.id = t.site_id
+      UNION ALL
+      SELECT 'task', s.code, s.name, t.worker, t.status, t.title, t.created_at
+       FROM tasks t JOIN sites s ON s.id = t.site_id
       ORDER BY at DESC LIMIT ?`,
     limit
   );
@@ -336,3 +342,83 @@ export function createWarranty(siteId: string, item: string, months: number, not
 /** 保修剩余天数（负数=已过期） */
 export const warrantyDaysLeft = (w: Warranty) =>
   Math.ceil((new Date(w.end_date).getTime() - Date.now()) / 86400000);
+
+/* ---------- 安装任务（工人小程序场景：图纸 → 三类拍照 → 打卡 → 直播） ---------- */
+
+export const WORKER_NAME = "张师傅"; // demo 工人身份
+
+export type Task = {
+  id: string; site_id: string; title: string; room: string | null; step_name: string | null;
+  drawing: string | null; worker: string; status: "待施工" | "施工中" | "已完成";
+  note: string | null; live: number; created_at: string; done_at: string | null;
+};
+export type TaskPhoto = {
+  id: string; task_id: string; category: "before" | "material" | "after"; url: string; note: string | null; created_at: string;
+};
+export type TaskWithSite = Task & { site_name: string; code: string; community: string | null };
+export type SitePhoto = TaskPhoto & { task_title: string; room: string | null; worker: string };
+
+export const TASK_STATUS = ["待施工", "施工中", "已完成"] as const;
+
+export const getTasks = (siteId: string) =>
+  all<Task>("SELECT * FROM tasks WHERE site_id=? ORDER BY created_at DESC", siteId);
+export const getTask = (id: string) => get<Task>("SELECT * FROM tasks WHERE id=?", id);
+export const getTaskPhotos = (taskId: string) =>
+  all<TaskPhoto>("SELECT * FROM task_photos WHERE task_id=? ORDER BY created_at", taskId);
+
+/** 该工地全部现场照（带任务来源信息，供详情页照片墙） */
+export const getSitePhotos = (siteId: string) =>
+  all<SitePhoto>(
+    `SELECT p.*, t.title AS task_title, t.room, t.worker
+       FROM task_photos p JOIN tasks t ON t.id = p.task_id
+      WHERE t.site_id=? ORDER BY p.created_at DESC`, siteId);
+
+/** 直播中的任务数（该工地） */
+export const countLiveTasks = (siteId: string) =>
+  (get<{ n: number }>("SELECT COUNT(*) AS n FROM tasks WHERE site_id=? AND live=1", siteId)!).n;
+
+/** 工人名下任务（跨工地，带工地信息；进行中优先，再按创建时间） */
+export function listTasksForWorker(worker: string): TaskWithSite[] {
+  const rows = all<TaskWithSite>(
+    `SELECT t.*, s.name AS site_name, s.code, s.community
+       FROM tasks t JOIN sites s ON s.id = t.site_id
+      WHERE t.worker=?`, worker
+  );
+  const rank = (r: TaskWithSite) => (r.status === "施工中" ? 0 : r.status === "待施工" ? 1 : 2);
+  return rows.sort((a, b) => rank(a) - rank(b) || b.created_at.localeCompare(a.created_at));
+}
+
+/** 工地待派/进行中任务统计（工长视角） */
+export const countTasksOpen = (siteId: string) =>
+  (get<{ n: number }>("SELECT COUNT(*) AS n FROM tasks WHERE site_id=? AND status!='已完成'", siteId)!).n;
+
+export function createTask(siteId: string, input: { title: string; room: string; stepName: string; worker: string; note: string }): string {
+  const id = randomUUID();
+  const tone = input.stepName.includes("瓦工") ? "#b45309" : input.stepName.includes("水电") ? "#0891b2" : "#2563eb";
+  const points = Math.max(1, Math.min(9, Math.round(input.title.length / 4) + 1));
+  db.prepare(
+    "INSERT INTO tasks (id, site_id, title, room, step_name, drawing, worker, status, note, live, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+  ).run(id, siteId, input.title, input.room, input.stepName, makeDrawing(input.title, input.room, points, "#e2e8f0", tone),
+    input.worker, "待施工", input.note, 0, new Date().toISOString());
+  return id;
+}
+
+/** 模拟现场拍照：生成分类照片并入库 */
+export function addTaskPhoto(taskId: string, category: "before" | "material" | "after", label: string, sub: string) {
+  db.prepare("INSERT INTO task_photos (id, task_id, category, url, note, created_at) VALUES (?,?,?,?,?,?)").run(
+    randomUUID(), taskId, category, makeTaskPhoto(category, label, sub), null, new Date().toISOString()
+  );
+}
+
+export function setTaskStatus(id: string, status: "待施工" | "施工中" | "已完成") {
+  db.prepare("UPDATE tasks SET status=?, done_at=? WHERE id=?").run(
+    status, status === "已完成" ? new Date().toISOString() : null, id
+  );
+}
+
+export function toggleTaskLive(id: string) {
+  const t = get<Task>("SELECT * FROM tasks WHERE id=?", id);
+  if (!t) return false;
+  db.prepare("UPDATE tasks SET live=? WHERE id=?").run(t.live ? 0 : 1, id);
+  return !t.live; // 返回开播/停播
+}

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSite, getSteps, getWarranties, warrantyDaysLeft } from "@/lib/data";
+import { countLiveTasks, getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSite, getSitePhotos, getSteps, getTasks, getWarranties, warrantyDaysLeft } from "@/lib/data";
 import { CHANGE_PITFALLS } from "@/lib/checklists";
 import {
   addLogAction,
@@ -12,6 +12,7 @@ import {
   createChangeAction,
   createMaterialAction,
   createPaymentAction,
+  createTaskAction,
   createWarrantyAction,
   receivePaymentAction,
   sendStaffMessageAction,
@@ -28,8 +29,19 @@ import { Donut, Progress, StatusBadge, DueBadge, daysBetween, fmtDate, fmtMoney,
 const GUTTER_L = 64;
 const GUTTER_R = 116;
 
-export default async function GongdiPage({ params }: { params: Promise<{ id: string }> }) {
+/* 详情页分类 tab：每屏只呈现一个类别（分门别类，避免九卡堆叠） */
+const TABS = [
+  { key: "jia", label: "概览", icon: "📊", bossOnly: false },
+  { key: "shigong", label: "施工", icon: "🧱", bossOnly: false },
+  { key: "caiwu", label: "财务", icon: "💰", bossOnly: true },
+  { key: "yanshou", label: "验收", icon: "✅", bossOnly: false },
+  { key: "goutong", label: "沟通", icon: "💬", bossOnly: false },
+] as const;
+
+export default async function GongdiPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ t?: string }> }) {
   const { id } = await params;
+  const { t: rawT = "jia" } = await searchParams;
+  const t = (["jia", "shigong", "caiwu", "yanshou", "goutong"] as string[]).includes(rawT) ? rawT : "jia";
   const site = getSite(id);
   if (!site) notFound();
   const role = await getRole();
@@ -41,6 +53,9 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
   const materials = getMaterials(site.id);
   const messages = getMessages(site.id);
   const warranties = getWarranties(site.id);
+  const tasks = getTasks(site.id);
+  const sitePhotos = getSitePhotos(site.id);
+  const liveTasks = tasks.filter((x) => x.live === 1);
 
   const host = (await headers()).get("host") ?? "localhost:3300";
   const inviteUrl = `http://${host}/c/${site.code}`;
@@ -237,7 +252,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
   );
 
   const acceptCard = (
-    <section className="card p-4">
+    <section className="card p-4 lg:col-span-2">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[13px] font-semibold">✅ 验收进度</span>
         <span className="text-[10px] font-mono text-zinc-400">{accDone}/{accepts.length}</span>
@@ -309,7 +324,7 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
   );
 
   const logsCard = (
-    <section className="card p-4 lg:col-span-2">
+    <section className="card p-4 lg:col-span-3">
       <div className="mb-2.5 flex items-baseline justify-between">
         <span className="text-[13px] font-semibold">📝 工地日志</span>
         <span className="text-[10px] text-zinc-400">业主端实时可见 · {logs.length} 条</span>
@@ -403,6 +418,113 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
         <SubmitButton className="btn btn-primary shrink-0 px-3 py-1.5 text-xs" pending="…">发送</SubmitButton>
       </form>
     </>
+  );
+
+  /* ============ 新增：现场照片流 / 安装任务（工人小程序联动） ============ */
+
+  const photosCard = (
+    <section className="card p-4 lg:col-span-3">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[13px] font-semibold">📷 现场照片流</span>
+        <span className="text-[10px] text-zinc-400">工人端拍照自动归档 · 共 {sitePhotos.length} 张</span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          { key: "before", label: "施工前", icon: "📷" },
+          { key: "material", label: "材料核对", icon: "📦" },
+          { key: "after", label: "施工后", icon: "✨" },
+        ].map((c) => {
+          const list = sitePhotos.filter((p) => p.category === c.key);
+          return (
+            <div key={c.key}>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[10px] text-zinc-400">
+                <span className="font-medium text-zinc-500">{c.icon} {c.label}</span>
+                <span className="rounded-full bg-zinc-100 px-1.5 font-mono">{list.length}</span>
+              </div>
+              <div className="space-y-2">
+                {list.length === 0 && (
+                  <div className="rounded-lg bg-zinc-50 py-8 text-center text-[10px] text-zinc-300">暂无照片</div>
+                )}
+                {list.map((p) => (
+                  <div key={p.id} className="overflow-hidden rounded-lg ring-1 ring-zinc-100">
+                    <ZoomImg src={p.url} alt={p.task_title} className="h-28 w-full object-cover" />
+                    <div className="truncate bg-white px-2 py-1 text-[9px] text-zinc-400">
+                      {p.task_title} · {p.worker}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+
+  const tasksCard = (
+    <section className="card p-4 lg:col-span-2">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-1">
+        <span className="text-[13px] font-semibold">🧰 安装任务</span>
+        <span className="text-[10px] text-zinc-400">派单 → 工人小程序执行 · 待办 {tasks.filter((t) => t.status !== "已完成").length}</span>
+      </div>
+      <div className="space-y-1.5">
+        {tasks.length === 0 && <p className="text-[11px] text-zinc-400">暂无任务，工长可从下方派单。</p>}
+        {tasks.map((t) => (
+          <div key={t.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-zinc-50 px-2.5 py-1.5">
+            <span className="text-[12px] font-medium text-zinc-700">{t.title}</span>
+            {t.live === 1 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> 直播中
+              </span>
+            )}
+            <span className="text-[10px] text-zinc-400">📍{t.room} · {t.worker}</span>
+            <StatusBadge status={t.status} />
+            <span className="ml-auto font-mono text-[10px] text-zinc-400">
+              📷{sitePhotos.filter((p) => p.task_id === t.id).length} · {fmtDate(t.created_at)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <details className="no-print group mt-2 border-t border-zinc-100 pt-2">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-500 [&::-webkit-details-marker]:hidden">
+          <span className="transition-transform group-open:rotate-90">▸</span> ＋ 派任务给安装工人
+        </summary>
+        <form action={createTaskAction} className="mt-2.5">
+          <input type="hidden" name="siteId" value={site.id} />
+          <div className="grid gap-2 md:grid-cols-[1fr_100px_1fr_100px]">
+            <input name="title" className="input px-2.5 py-1.5 text-xs" placeholder="任务内容，如：主卧安装 5 个插座" required />
+            <input name="room" className="input px-2.5 py-1.5 text-xs" placeholder="点位房间" />
+            <select name="stepName" className="input px-2.5 py-1.5 text-xs" defaultValue={steps.find((s) => s.status === "进行中")?.name}>
+              {steps.map((s) => <option key={s.id}>{s.name}</option>)}
+            </select>
+            <input name="worker" className="input px-2.5 py-1.5 text-xs" placeholder="工人（张师傅）" />
+          </div>
+          <div className="mt-2 flex items-end gap-2.5">
+            <input name="note" className="input min-w-0 flex-1 px-2.5 py-1.5 text-xs" placeholder="备注：材料清单/注意事项（选填）" />
+            <SubmitButton className="btn btn-primary shrink-0 px-3 py-1.5 text-xs" pending="派单中…">派单</SubmitButton>
+          </div>
+          <p className="mt-1.5 text-[10px] text-zinc-400">工人小程序打开任务：对照点位图纸施工，上传施工前/材料/施工后三类照片，打卡完成自动推送各方。</p>
+        </form>
+      </details>
+    </section>
+  );
+
+  const photosPreview = (
+    <section className="card p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-semibold">📷 现场照片</span>
+        <Link href={`/gongdi/${id}?t=shigong`} className="text-[10px] font-medium text-indigo-600 hover:underline">
+          全部 {sitePhotos.length} 张 →
+        </Link>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {sitePhotos.slice(0, 4).map((p) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={p.id} src={p.url} alt={p.task_title} className="h-20 w-full rounded-lg object-cover ring-1 ring-zinc-100" />
+        ))}
+      </div>
+      <div className="mt-2 text-[9px] text-zinc-400">施工前 / 材料 / 施工后 三类自动归档，任务完成即推送各方。</div>
+    </section>
   );
 
   /* ============ 角色专属卡片 ============ */
@@ -561,25 +683,6 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
     </section>
   );
 
-  const inviteBar = (
-    <section className="card flex flex-wrap items-center gap-5 p-4 lg:col-span-3">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={qr} alt="业主端邀请二维码" className="h-24 w-24 shrink-0 rounded-xl ring-1 ring-zinc-100" />
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold">📲 邀请业主进工地</div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-500">
-          <span>邀请码 <b className="font-mono text-base font-bold tracking-widest text-indigo-600">{site.code}</b></span>
-          <span className="break-all font-mono text-[10px] text-zinc-400">{inviteUrl}</span>
-        </div>
-        <p className="mt-1 text-[10px] text-zinc-400">业主微信扫码打开：看进度/预算/付款/材料，按清单验收打卡，增项线上签字。</p>
-      </div>
-      <div className="grid w-40 shrink-0 gap-2">
-        <Link href={`/gongdi/${site.id}/baogao`} className="btn btn-ghost text-xs">🖨 工地报告</Link>
-        <Link href={`/c/${site.code}`} target="_blank" className="btn btn-ghost text-xs">📱 预览业主端</Link>
-      </div>
-    </section>
-  );
-
   const inviteStack = (
     <div className="space-y-4">
       <section className="card p-4 text-center">
@@ -703,31 +806,89 @@ export default async function GongdiPage({ params }: { params: Promise<{ id: str
           ))}
         </div>
 
-        {/* 3 列分区：靠 col-span 让左列宽、右列窄，避免全部竖排堆叠 */}
+        {/* 直播横幅（工地级状态，所有 tab 可见） */}
+        {liveTasks.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-xl bg-red-50 px-4 py-2.5 ring-1 ring-inset ring-red-100">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+            </span>
+            <span className="text-xs font-semibold text-red-600">
+              🔴 {liveTasks[0].worker} 正在直播「{liveTasks[0].title}」· {liveTasks[0].room}
+            </span>
+            <span className="ml-auto text-[10px] text-red-400">工人小程序推流 · 工长/监理/业主可围观</span>
+          </div>
+        )}
+
+        {/* 分门别类 tab 栏 */}
+        <div className="no-print mb-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm ring-1 ring-zinc-100">
+          {TABS.filter((x) => !x.bossOnly || role === "boss").map((x) => {
+            const on = t === x.key;
+            const openCount = tasks.filter((k) => k.status !== "已完成").length;
+            return (
+              <Link
+                key={x.key}
+                href={`/gongdi/${site.id}?t=${x.key}`}
+                className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition ${
+                  on ? "bg-indigo-600 text-white shadow-sm" : "text-zinc-500 hover:bg-zinc-50"
+                }`}
+              >
+                <span>{x.icon}</span>
+                {x.label}
+                {x.key === "shigong" && openCount > 0 && (
+                  <span className={`rounded-full px-1.5 text-[9px] font-bold ${on ? "bg-white/20" : "bg-amber-100 text-amber-600"}`}>
+                    {openCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* 内容区：按 tab 分桶，每屏只呈现当前类别 */}
         <div className="grid gap-4 lg:grid-cols-3">
-          {role === "boss" ? (
+          {t === "jia" && (
             <>
-              {stepsCard}
-              {paymentCard}
               {ganttCard}
-              {acceptCard}
-              {changeCard}
-              <div className="space-y-4">
-                {materialCard}
-                {warrantyCard}
-              </div>
-              {logsCard}
-              <section className="card p-4">{messagesInner}</section>
-              {inviteBar}
-            </>
-          ) : (
-            <>
-              {stepsCard}
               {tipCard}
-              {ganttCard}
-              {acceptCard}
+              {stepsCard}
+              {photosPreview}
+            </>
+          )}
+
+          {t === "shigong" && (
+            <>
+              {photosCard}
+              {tasksCard}
               {materialCard}
               {logsCard}
+            </>
+          )}
+
+          {t === "caiwu" &&
+            (role === "boss" ? (
+              <>
+                {paymentCard}
+                {changeCard}
+              </>
+            ) : (
+              <section className="card p-6 lg:col-span-3">
+                <div className="text-[13px] font-semibold">💰 财务收款</div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+                  财务与增项金额由老板统一管理（信息隔离）。{role === "supervisor" ? "监理" : "工长"}的日常操作：推进工序、登记材料、发布日志、验收打卡。
+                </p>
+              </section>
+            ))}
+
+          {t === "yanshou" && (
+            <>
+              {acceptCard}
+              {warrantyCard}
+            </>
+          )}
+
+          {t === "goutong" && (
+            <>
               <section className="card p-4 lg:col-span-2">{messagesInner}</section>
               {inviteStack}
             </>

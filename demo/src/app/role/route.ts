@@ -7,7 +7,7 @@ import type { Role } from "@/lib/role";
 export async function GET(req: NextRequest) {
   const to = req.nextUrl.searchParams.get("to") ?? "";
   const back = req.nextUrl.searchParams.get("back") || "/";
-  if (["boss", "foreman", "supervisor"].includes(to)) {
+  if (["boss", "foreman", "supervisor", "worker"].includes(to)) {
     (await cookies()).set("zx-role", to, { path: "/", maxAge: 60 * 60 * 24 * 30 });
   }
   redirect(back);

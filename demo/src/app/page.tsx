@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { listSitesWithProgress, recentEvents, getSteps, getAccepts, getMaterials, getMessages, countOverduePayments } from "@/lib/data";
 import { getRole } from "@/lib/role";
 import { SITE_TEMPLATES } from "@/lib/checklists";
@@ -21,6 +22,8 @@ export default async function HomePage({
 }) {
   const { f = "all" } = await searchParams;
   const role = await getRole();
+  // 工人是移动端小程序角色，进入桌面首页直接跳工人端
+  if (role === "worker") redirect("/worker");
   const list0 = listSitesWithProgress();
   const list = role === "foreman" ? list0.filter((x) => x.site.foreman === "李工长") : list0;
   const withStatus = list.map((x) => ({
@@ -350,11 +353,15 @@ export default async function HomePage({
                     e.type === "log" ? `${e.author} 发布日志`
                     : e.type === "accept" ? `${e.author} 验收通过`
                     : e.type === "pay" ? `收到款项`
+                    : e.type === "photo" ? `${e.author} 上传${e.extra === "before" ? "施工前" : e.extra === "material" ? "材料" : "施工后"}照片`
+                    : e.type === "task" ? `${e.author} 任务${e.extra === "已完成" ? "完成" : e.extra}`
                     : `${e.author} 留言`;
                   const dot =
                     e.type === "log" ? "bg-indigo-300"
                     : e.type === "accept" ? "bg-emerald-400"
                     : e.type === "pay" ? "bg-emerald-500"
+                    : e.type === "photo" ? "bg-sky-400"
+                    : e.type === "task" ? "bg-violet-400"
                     : "bg-amber-300";
                   return (
                     <div key={i} className="relative pl-5">

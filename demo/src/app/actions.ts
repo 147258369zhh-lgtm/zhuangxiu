@@ -6,6 +6,7 @@ import { saveUpload } from "@/lib/upload";
 import {
   addLog,
   addMessage,
+  addTaskPhoto,
   arriveMaterial,
   confirmAccept,
   createAccept,
@@ -13,15 +14,21 @@ import {
   createMaterial,
   createPayment,
   createSite,
+  createTask,
   createWarranty,
   decideChange,
   getSite,
   getSiteByCode,
+  getTask,
+  getTaskPhotos,
   receivePayment,
   setStepStatus,
+  setTaskStatus,
+  toggleTaskLive,
   updateSite,
   updateStepBudget,
   STEP_STATUS,
+  WORKER_NAME,
 } from "@/lib/data";
 
 function refresh(siteId: string, code?: string) {
@@ -212,4 +219,78 @@ export async function sendOwnerMessageAction(fd: FormData) {
   if (!site || !content) return;
   addMessage(site.id, "业主", site.owner_name || "业主", content);
   refresh(site.id, site.code);
+}
+
+/* ---------- 安装任务（工长派发 / 工人执行 / 直播） ---------- */
+
+function refreshTask(siteId: string) {
+  revalidatePath("/");
+  revalidatePath("/worker");
+  revalidatePath(`/gongdi/${siteId}`);
+}
+
+/** 工长派任务（B 端工地详情 · 施工 tab） */
+export async function createTaskAction(fd: FormData) {
+  const siteId = String(fd.get("siteId") || "");
+  const title = String(fd.get("title") || "").trim();
+  if (!siteId || !title) return;
+  createTask(siteId, {
+    title,
+    room: String(fd.get("room") || "").trim() || "未指定",
+    stepName: String(fd.get("stepName") || "").trim() || "",
+    worker: String(fd.get("worker") || "").trim() || WORKER_NAME,
+    note: String(fd.get("note") || "").trim(),
+  });
+  refreshTask(siteId);
+}
+
+/** 工人现场拍照（模拟上传）：生成分类照片入库 */
+export async function addTaskPhotoAction(fd: FormData) {
+  const taskId = String(fd.get("taskId") || "");
+  const category = String(fd.get("category") || "") as "before" | "material" | "after";
+  if (!taskId || !["before", "material", "after"].includes(category)) return;
+  const task = getTask(taskId);
+  if (!task || task.status === "已完成") return;
+  const sub =
+    category === "before" ? `${task.room ?? ""}原始现场 · 打卡定位`
+    : category === "material" ? `${task.room ?? ""}材料核对 · 与清单一致`
+    : `${task.room ?? ""}安装完成 · 待验收`;
+  addTaskPhoto(taskId, category, task.title, sub);
+  refreshTask(task.site_id);
+}
+
+/** 工人开工（待施工 → 施工中） */
+export async function startTaskAction(fd: FormData) {
+  const taskId = String(fd.get("taskId") || "");
+  if (!taskId) return;
+  const task = getTask(taskId);
+  if (!task || task.status !== "待施工") return;
+  setTaskStatus(taskId, "施工中");
+  refreshTask(task.site_id);
+}
+
+/** 工人打卡完成（施工中 → 已完成）：照片已同步工长/监理/业主 */
+export async function finishTaskAction(fd: FormData) {
+  const taskId = String(fd.get("taskId") || "");
+  if (!taskId) return;
+  const task = getTask(taskId);
+  if (!task || task.status !== "施工中") return;
+  // 完成前自动补一张施工后照（若一张都没拍，保证照片流不空）
+  const hasAfter = getTaskPhotos(taskId).some((p) => p.category === "after");
+  if (!hasAfter) {
+    addTaskPhoto(taskId, "after", task.title, `${task.room ?? ""}安装完成 · 自动打卡照`);
+  }
+  setTaskStatus(taskId, "已完成");
+  if (task.live) toggleTaskLive(taskId); // 下播
+  refreshTask(task.site_id);
+}
+
+/** 开/关直播（小程序 live-pusher 占位） */
+export async function toggleLiveAction(fd: FormData) {
+  const taskId = String(fd.get("taskId") || "");
+  if (!taskId) return;
+  const task = getTask(taskId);
+  if (!task) return;
+  toggleTaskLive(taskId);
+  refreshTask(task.site_id);
 }

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSiteByCode, getSteps, getWarranties, warrantyDaysLeft } from "@/lib/data";
+import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments, getSiteByCode, getSitePhotos, getSteps, getTasks, getWarranties, warrantyDaysLeft } from "@/lib/data";
 import { confirmAcceptAction, decideChangeAction, sendOwnerMessageAction } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
@@ -17,6 +17,8 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
   const materials = getMaterials(site.id);
   const warranties = getWarranties(site.id);
   const messages = getMessages(site.id);
+  const sitePhotos = getSitePhotos(site.id);
+  const liveTasks = getTasks(site.id).filter((x) => x.live === 1);
 
   const stepDone = steps.filter((s) => s.status === "已完成").length;
   const pct = steps.length ? (stepDone / steps.length) * 100 : 0;
@@ -47,6 +49,12 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
           <span className="rounded-full bg-white/15 px-2.5 py-1 ring-1 ring-inset ring-white/25">工长 {site.foreman}</span>
           <span className="rounded-full bg-white/15 px-2.5 py-1 ring-1 ring-inset ring-white/25">演示装饰</span>
         </div>
+        {liveTasks.length > 0 && (
+          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-red-500/25 px-2.5 py-1.5 ring-1 ring-inset ring-red-200/40">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-300" />
+            <span className="text-[10px] font-semibold">{liveTasks[0].worker} 正在直播「{liveTasks[0].title}」· 点击小程序围观</span>
+          </div>
+        )}
       </div>
 
       {(pendingChanges.length > 0 || accepts.some((a) => !a.done)) && (
@@ -206,6 +214,37 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 现场照片（工人三类拍照流转到业主端） */}
+      {sitePhotos.length > 0 && (
+        <div className="card mb-4 p-4">
+          <div className="mb-1 flex items-baseline justify-between">
+            <div className="text-sm font-semibold">📷 现场照片</div>
+            <div className="text-[11px] text-zinc-400">工人实时上传 · {sitePhotos.length} 张</div>
+          </div>
+          <p className="mb-3 text-[11px] text-zinc-400">施工前 / 材料 / 施工后 三类留档，全部可查。</p>
+          <div className="grid grid-cols-2 gap-2">
+            {sitePhotos.slice(0, 6).map((p) => {
+              const cat =
+                p.category === "before" ? { label: "施工前", cls: "bg-zinc-100 text-zinc-500" }
+                : p.category === "material" ? { label: "材料", cls: "bg-blue-50 text-blue-600" }
+                : { label: "施工后", cls: "bg-emerald-50 text-emerald-600" };
+              return (
+                <div key={p.id} className="overflow-hidden rounded-xl ring-1 ring-zinc-100">
+                  <ZoomImg src={p.url} alt={p.task_title} className="h-24 w-full object-cover" />
+                  <div className="flex items-center gap-1 bg-white px-2 py-1">
+                    <span className={`rounded px-1 py-0.5 text-[8px] font-medium ${cat.cls}`}>{cat.label}</span>
+                    <span className="truncate text-[9px] text-zinc-400">{p.task_title}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {sitePhotos.length > 6 && (
+            <div className="mt-2 text-center text-[10px] text-zinc-400">还有 {sitePhotos.length - 6} 张 · 验收时现场查看</div>
+          )}
         </div>
       )}
 

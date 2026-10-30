@@ -3,10 +3,15 @@ import { getAccepts, getChanges, getLogs, getMaterials, getMessages, getPayments
 import { confirmAcceptAction, decideChangeAction, sendOwnerMessageAction } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ZoomImg } from "@/components/ZoomImg";
+import { MiniShell } from "@/components/MiniShell";
 import { Progress, StatusBadge, DueBadge, daysBetween, fmtDate, fmtMoney, fmtTime } from "@/components/ui";
 
-export default async function ClientPage({ params }: { params: Promise<{ code: string }> }) {
+const C_TABS = ["progress", "photos", "accept", "chat"] as const;
+
+export default async function ClientPage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { code } = await params;
+  const { tab: rawTab = "progress" } = await searchParams;
+  const tab = (C_TABS as readonly string[]).includes(rawTab) ? rawTab : "progress";
   const site = getSiteByCode(code);
   if (!site) notFound();
   const steps = getSteps(site.id);
@@ -40,7 +45,17 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
   }));
 
   return (
-    <div className="mx-auto max-w-md px-4 pb-28 pt-6">
+    <MiniShell
+      title="我的家"
+      active={tab}
+      tabs={[
+        { key: "progress", href: `/c/${code}?tab=progress`, label: "进度", icon: "📊", badge: pendingChanges.length },
+        { key: "photos", href: `/c/${code}?tab=photos`, label: "照片", icon: "📷" },
+        { key: "accept", href: `/c/${code}?tab=accept`, label: "验收", icon: "✅", badge: accepts.filter((a) => !a.done).length },
+        { key: "chat", href: `/c/${code}?tab=chat`, label: "沟通", icon: "💬" },
+      ]}
+    >
+      <div>
       <div className="mb-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-4 py-4 text-white shadow-sm">
         <div className="text-[11px] font-medium text-indigo-100">{site.community}</div>
         <h1 className="mt-0.5 text-xl font-bold">{site.name}</h1>
@@ -57,14 +72,17 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
         )}
       </div>
 
+      {/* ========== 进度 tab ========== */}
+      {tab === "progress" && (
+        <>
       {(pendingChanges.length > 0 || accepts.some((a) => !a.done)) && (
         <div className="mb-4 flex items-center gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
           <span className="text-base">🔔</span>
           <div className="text-xs leading-relaxed text-amber-800">
             待你处理：
-            {pendingChanges.length > 0 && <a href="#changes" className="font-semibold underline underline-offset-2">{pendingChanges.length} 笔增项确认</a>}
+            {pendingChanges.length > 0 && <a href={`/c/${code}?tab=progress`} className="font-semibold underline underline-offset-2">{pendingChanges.length} 笔增项确认</a>}
             {pendingChanges.length > 0 && accepts.some((a) => !a.done) && " · "}
-            {accepts.some((a) => !a.done) && <a href="#accept" className="font-semibold underline underline-offset-2">{accepts.filter((a) => !a.done).length} 项验收打卡</a>}
+            {accepts.some((a) => !a.done) && <a href={`/c/${code}?tab=accept`} className="font-semibold underline underline-offset-2">{accepts.filter((a) => !a.done).length} 项验收打卡</a>}
           </div>
         </div>
       )}
@@ -217,37 +235,6 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
         </div>
       )}
 
-      {/* 现场照片（工人三类拍照流转到业主端） */}
-      {sitePhotos.length > 0 && (
-        <div className="card mb-4 p-4">
-          <div className="mb-1 flex items-baseline justify-between">
-            <div className="text-sm font-semibold">📷 现场照片</div>
-            <div className="text-[11px] text-zinc-400">工人实时上传 · {sitePhotos.length} 张</div>
-          </div>
-          <p className="mb-3 text-[11px] text-zinc-400">施工前 / 材料 / 施工后 三类留档，全部可查。</p>
-          <div className="grid grid-cols-2 gap-2">
-            {sitePhotos.slice(0, 6).map((p) => {
-              const cat =
-                p.category === "before" ? { label: "施工前", cls: "bg-zinc-100 text-zinc-500" }
-                : p.category === "material" ? { label: "材料", cls: "bg-blue-50 text-blue-600" }
-                : { label: "施工后", cls: "bg-emerald-50 text-emerald-600" };
-              return (
-                <div key={p.id} className="overflow-hidden rounded-xl ring-1 ring-zinc-100">
-                  <ZoomImg src={p.url} alt={p.task_title} className="h-24 w-full object-cover" />
-                  <div className="flex items-center gap-1 bg-white px-2 py-1">
-                    <span className={`rounded px-1 py-0.5 text-[8px] font-medium ${cat.cls}`}>{cat.label}</span>
-                    <span className="truncate text-[9px] text-zinc-400">{p.task_title}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {sitePhotos.length > 6 && (
-            <div className="mt-2 text-center text-[10px] text-zinc-400">还有 {sitePhotos.length - 6} 张 · 验收时现场查看</div>
-          )}
-        </div>
-      )}
-
       {/* 材料进场 */}
       {materials.length > 0 && (
         <div className="card mb-4 p-4">
@@ -269,7 +256,58 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
           </div>
         </div>
       )}
+        </>
+      )}
 
+      {/* ========== 照片 tab（工人三类拍照，完整归档） ========== */}
+      {tab === "photos" && (
+        <div>
+          {sitePhotos.length === 0 ? (
+            <div className="card p-8 text-center text-xs text-zinc-400">
+              工人还没有上传照片，施工开始后会实时同步到这里。
+            </div>
+          ) : (
+            [
+              { key: "before", label: "施工前", icon: "📷", desc: "原始现场 / 原线路" },
+              { key: "material", label: "材料核对", icon: "📦", desc: "品牌型号留档" },
+              { key: "after", label: "施工后", icon: "✨", desc: "安装完成效果" },
+            ].map((c) => {
+              const list = sitePhotos.filter((p) => p.category === c.key);
+              return (
+                <div key={c.key} className="card mb-4 p-4">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-sm font-semibold">{c.icon} {c.label}</span>
+                    <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 font-mono text-[9px] text-zinc-400">{list.length}</span>
+                    <span className="ml-auto text-[10px] text-zinc-400">{c.desc}</span>
+                  </div>
+                  {list.length === 0 ? (
+                    <p className="py-3 text-[11px] text-zinc-300">暂无</p>
+                  ) : (
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {list.map((p) => (
+                        <div key={p.id} className="overflow-hidden rounded-xl ring-1 ring-zinc-100">
+                          <ZoomImg src={p.url} alt={p.task_title} className="h-28 w-full object-cover" />
+                          <div className="bg-white px-2 py-1">
+                            <div className="truncate text-[9px] text-zinc-500">{p.task_title}</div>
+                            <div className="text-[8px] text-zinc-300">{p.room} · {p.worker}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+          <p className="pb-2 text-center text-[10px] leading-relaxed text-zinc-300">
+            照片由工人现场拍摄并自动归档，三类齐全即代表该任务可按流程验收。
+          </p>
+        </div>
+      )}
+
+      {/* ========== 验收 tab ========== */}
+      {tab === "accept" && (
+        <>
       {/* 验收打卡 */}
       <div id="accept" className="card mb-4 scroll-mt-4 p-4">
         <div className="mb-1 flex items-baseline justify-between">
@@ -327,6 +365,23 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
             </div>
           ))}
         </div>
+      </div>
+        </>
+      )}
+
+      {/* ========== 沟通 tab ========== */}
+      {tab === "chat" && (
+        <>
+      {/* 工长联系卡（原固定底栏改入沟通 tab） */}
+      <div className="card mb-4 flex items-center gap-3 p-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-600">
+          {(site.foreman ?? "工").slice(0, 1)}
+        </div>
+        <div className="min-w-0 flex-1 text-xs">
+          <div className="font-semibold text-zinc-700">{site.foreman} · 正在负责你的工地</div>
+          <div className="text-[10px] text-zinc-400">施工问题随时沟通，消息双方可见</div>
+        </div>
+        <a href="tel:13800000000" className="btn btn-primary shrink-0 px-3.5 py-2 text-xs">📞 联系</a>
       </div>
 
       {/* 留言板 */}
@@ -406,22 +461,11 @@ export default async function ClientPage({ params }: { params: Promise<{ code: s
           ))}
         </div>
       </div>
+        </>
+      )}
 
       <div className="mt-6 text-center text-[10px] text-zinc-300">装修管理平台 Demo · 业主端 {site.code}</div>
-
-      {/* 底部联系栏 */}
-      <div className="fixed bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-600">
-            {(site.foreman ?? "工").slice(0, 1)}
-          </div>
-          <div className="min-w-0 text-xs">
-            <div className="font-semibold text-zinc-700">{site.foreman} · 正在负责你的工地</div>
-            <div className="text-[10px] text-zinc-400">施工问题随时沟通，消息双方可见</div>
-          </div>
-          <a href="tel:13800000000" className="btn btn-primary ml-auto shrink-0 px-4 py-2 text-xs">📞 联系工长</a>
-        </div>
       </div>
-    </div>
+    </MiniShell>
   );
 }

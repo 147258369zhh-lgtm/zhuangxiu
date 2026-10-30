@@ -422,3 +422,62 @@ export function toggleTaskLive(id: string) {
   db.prepare("UPDATE tasks SET live=? WHERE id=?").run(t.live ? 0 : 1, id);
   return !t.live; // 返回开播/停播
 }
+
+/* ---------- 自装线：房间点位设计 → BOM 材料清单（桌面客户端场景） ---------- */
+
+export const SELF_PLAN = "my-home";
+export const POINT_TYPES = ["插座", "开关", "灯具", "水口", "网口"] as const;
+export type PointType = (typeof POINT_TYPES)[number];
+
+export type SelfRoom = { id: string; plan_id: string; name: string; area: number; sort: number };
+export type SelfPoint = { id: string; room_id: string; type: string; label: string | null; note: string | null; sort: number };
+export type SelfPointRow = SelfPoint & { room_name: string };
+
+/** 材料规格知识库（BOM 计价依据） */
+export const BOM_SPECS: Record<string, { name: string; spec: string; unit: string; price: number }> = {
+  插座: { name: "五孔插座", spec: "86型 10A / 空调 16A", unit: "个", price: 35 },
+  开关: { name: "单/双联开关", spec: "86型 白色", unit: "个", price: 28 },
+  灯具: { name: "LED 吸顶灯 / 筒灯", spec: "9W / 12W", unit: "盏", price: 65 },
+  水口: { name: "PPR 冷热水口", spec: "4分 / 6分", unit: "个", price: 45 },
+  网口: { name: "网络面板", spec: "六类 屏蔽", unit: "个", price: 40 },
+};
+
+export const listSelfRooms = () =>
+  all<SelfRoom>("SELECT * FROM self_rooms WHERE plan_id=? ORDER BY sort", SELF_PLAN);
+export const getSelfPoints = (roomId: string) =>
+  all<SelfPoint>("SELECT * FROM self_points WHERE room_id=? ORDER BY sort", roomId);
+export const listSelfPoints = () =>
+  all<SelfPointRow>(
+    `SELECT p.*, r.name AS room_name FROM self_points p
+       JOIN self_rooms r ON r.id = p.room_id
+      WHERE r.plan_id=? ORDER BY r.sort, p.sort`, SELF_PLAN);
+
+export function addSelfPoint(roomId: string, type: string, label: string) {
+  const maxSort = get<{ s: number | null }>("SELECT MAX(sort) AS s FROM self_points WHERE room_id=?", roomId)!;
+  db.prepare("INSERT INTO self_points (id, room_id, type, label, note, sort) VALUES (?,?,?,?,?,?)").run(
+    randomUUID(), roomId, type, label || null, null, (maxSort.s ?? 0) + 1
+  );
+}
+
+export function removeSelfPoint(id: string) {
+  db.prepare("DELETE FROM self_points WHERE id=?").run(id);
+}
+
+/** BOM 汇总：类型聚合 + 辅材估算（电线线管按插座+开关数 × 3.5 米） */
+export function computeBom() {
+  const points = listSelfPoints();
+  const byType = new Map<string, number>();
+  for (const p of points) byType.set(p.type, (byType.get(p.type) ?? 0) + 1);
+  const rows = [...byType.entries()]
+    .filter(([t]) => BOM_SPECS[t])
+    .map(([type, qty]) => {
+      const s = BOM_SPECS[type];
+      return { type, name: s.name, spec: s.spec, unit: s.unit, qty, price: s.price, subtotal: qty * s.price };
+    });
+  const wireQty = Math.round(((byType.get("插座") ?? 0) + (byType.get("开关") ?? 0)) * 3.5);
+  if (wireQty > 0) {
+    rows.push({ type: "辅材", name: "电线线管辅材（估算）", spec: "BV2.5/4㎡ + PVC 线管", unit: "米", qty: wireQty, price: 6, subtotal: wireQty * 6 });
+  }
+  const total = rows.reduce((s, r) => s + r.subtotal, 0);
+  return { rows, total, count: points.length };
+}

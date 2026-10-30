@@ -96,6 +96,7 @@ export default function RolesPage() {
                 <span key={x} className="rounded-full bg-zinc-50 px-2 py-0.5 text-zinc-500 ring-1 ring-inset ring-zinc-100">{x}</span>
               ))}
             </div>
+            <Link href="/self" className="btn btn-ghost mt-3 w-fit text-[11px] text-violet-600">🎨 进入自装工作台 →</Link>
           </section>
           <section className="card p-5">
             <div className="flex items-center gap-2">

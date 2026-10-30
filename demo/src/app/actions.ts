@@ -6,6 +6,7 @@ import { saveUpload } from "@/lib/upload";
 import {
   addLog,
   addMessage,
+  addSelfPoint,
   addTaskPhoto,
   arriveMaterial,
   confirmAccept,
@@ -21,7 +22,9 @@ import {
   getSiteByCode,
   getTask,
   getTaskPhotos,
+  POINT_TYPES,
   receivePayment,
+  removeSelfPoint,
   setStepStatus,
   setTaskStatus,
   toggleTaskLive,
@@ -293,4 +296,23 @@ export async function toggleLiveAction(fd: FormData) {
   if (!task) return;
   toggleTaskLive(taskId);
   refreshTask(task.site_id);
+}
+
+/* ---------- 自装线：点位设计（桌面客户端场景） ---------- */
+
+/** 添加点位 */
+export async function addSelfPointAction(fd: FormData) {
+  const roomId = String(fd.get("roomId") || "");
+  const type = String(fd.get("type") || "");
+  if (!roomId || !POINT_TYPES.includes(type as (typeof POINT_TYPES)[number])) return;
+  addSelfPoint(roomId, type, String(fd.get("label") || "").trim());
+  revalidatePath("/self");
+}
+
+/** 删除点位 */
+export async function removeSelfPointAction(fd: FormData) {
+  const pointId = String(fd.get("pointId") || "");
+  if (!pointId) return;
+  removeSelfPoint(pointId);
+  revalidatePath("/self");
 }

@@ -141,6 +141,21 @@ CREATE TABLE IF NOT EXISTS task_photos (
   note TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS self_rooms (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL DEFAULT 'my-home',
+  name TEXT NOT NULL,
+  area REAL NOT NULL DEFAULT 0,
+  sort INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS self_points (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  label TEXT,
+  note TEXT,
+  sort INTEGER NOT NULL DEFAULT 0
+);
 `);
 
 // 旧库平滑升级：缺列自动补（dev 迭代友好）
@@ -434,6 +449,46 @@ if (tCnt.n === 0) {
     mkP(t1, "after", "定位放线完成", "横平竖直，点位与图纸一致", 0.8);
     mkT(b3.id, "主卧电视墙增加网口", "主卧", "水电改造", 1, "#0891b2", "张师傅", "待施工", "业主李先生今日新增需求", 0.4);
   }
+}
+
+// 自装线种子（独立判断）：98㎡ 两室两厅的点位设计
+const srCnt = db.prepare("SELECT COUNT(*) AS n FROM self_rooms").get() as { n: number };
+if (srCnt.n === 0) {
+  const insRoom = db.prepare("INSERT INTO self_rooms (id, plan_id, name, area, sort) VALUES (?,?,?,?,?)");
+  const insPoint = db.prepare("INSERT INTO self_points (id, room_id, type, label, note, sort) VALUES (?,?,?,?,?,?)");
+  const rooms: [string, number, [string, string][]][] = [
+    ["客餐厅", 28, [
+      ["插座", "电视墙双联"], ["插座", "沙发两侧"], ["插座", "餐桌旁"], ["插座", "空调 16A"],
+      ["开关", "主灯双控"], ["开关", "玄关"], ["灯具", "客厅主灯"], ["灯具", "餐吊灯"], ["网口", "电视墙"],
+    ]],
+    ["主卧", 16, [
+      ["插座", "床头两侧"], ["插座", "电视墙"], ["插座", "空调 16A"],
+      ["开关", "主灯双控"], ["灯具", "吸顶灯"], ["网口", "书桌旁"],
+    ]],
+    ["次卧", 12, [
+      ["插座", "床头"], ["插座", "书桌"], ["插座", "空调 16A"],
+      ["开关", "主灯"], ["灯具", "吸顶灯"],
+    ]],
+    ["厨房", 8, [
+      ["插座", "油烟机"], ["插座", "冰箱"], ["插座", "微波炉"], ["插座", "小家电×2"], ["插座", "洗碗机"],
+      ["水口", "洗菜盆冷热"], ["灯具", "集成吊顶灯"],
+    ]],
+    ["卫生间", 6, [
+      ["插座", "吹风机"], ["插座", "智能马桶"],
+      ["水口", "花洒冷热"], ["水口", "洗手盆冷热"], ["水口", "马桶进水"],
+      ["灯具", "镜前灯"], ["灯具", "浴霸"],
+    ]],
+    ["阳台", 6, [
+      ["插座", "洗衣机"], ["插座", "烘干机"],
+      ["水口", "洗衣池"], ["水口", "拖把池"],
+      ["灯具", "吸顶灯"],
+    ]],
+  ];
+  rooms.forEach(([name, area, pts], i) => {
+    const rid = randomUUID();
+    insRoom.run(rid, "my-home", name, area, i);
+    pts.forEach(([type, label], j) => insPoint.run(randomUUID(), rid, type, label, null, j));
+  });
 }
 
 export default db;

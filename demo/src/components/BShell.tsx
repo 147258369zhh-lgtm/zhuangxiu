@@ -17,6 +17,7 @@ const NAV_GROUPS = [
     label: "平台",
     items: [
       { href: "/roles", label: "产品架构", icon: "🧭", roles: ["boss", "foreman", "supervisor"], badge: "" },
+      { href: "/self", label: "自装工作台", icon: "🎨", roles: ["boss", "foreman", "supervisor"], badge: "" },
     ],
   },
 ];
